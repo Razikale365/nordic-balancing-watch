@@ -1,0 +1,10 @@
+# private notes and local data
+.env
+.dev.vars
+site/data/
+.wrangler/
+node_modules/
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/

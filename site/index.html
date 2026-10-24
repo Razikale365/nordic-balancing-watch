@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nordic Balancing Watch</title>
+  <meta name="description" content="When Nordic balancing prices are first published, and how often they are revised afterwards.">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"
+    integrity="sha384-b0GXujLkk9eYYSmcSfoyZbfyElGAQnDyY0skCHSG6w3JgTMFnz11ggrTAr7seu9f"
+    crossorigin="anonymous" defer></script>
+  <script src="config.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <p id="stale-banner" role="status" hidden></p>
+
+  <header class="site-header">
+    <h1>Nordic Balancing Watch</h1>
+    <p class="tagline">When Nordic balancing prices are first published &mdash; and how often they are revised afterwards.</p>
+    <p class="meta">Collecting since <time id="collecting-since" datetime="">&mdash;</time>
+      &middot; Updated <time id="updated" datetime="">&mdash;</time></p>
+  </header>
+
+  <main id="main">
+    <section id="empty-state" hidden>
+      <h2>Data is not published yet</h2>
+      <p>The collector has not produced a data file this site can read yet. Check back later.</p>
+    </section>
+
+    <div id="content" hidden>
+
+      <section class="card" aria-labelledby="kf-h">
+        <h2 id="kf-h">Key figures</h2>
+        <dl class="stats" id="key-figures"></dl>
+      </section>
+
+      <section class="card" aria-labelledby="delay-h">
+        <h2 id="delay-h">How long until the imbalance price is out</h2>
+        <p class="note">Minutes from the end of the settlement interval until the price first
+          appears, last 7 days. P50 is the typical interval; P95 means 95&nbsp;% of prices were out
+          by then.</p>
+        <div class="controls">
+          <label for="delay-source">Source
+            <select id="delay-source"></select>
+          </label>
+        </div>
+        <div class="chart-wrap"><canvas id="delay-chart" role="img"
+          aria-label="Bar chart of P50 and P95 publication delay per source and zone"></canvas></div>
+        <details class="data-table">
+          <summary>Show the numbers as a table</summary>
+          <div class="table-scroll">
+            <table id="delay-table">
+              <thead><tr><th scope="col">Source</th><th scope="col">Zone</th>
+                <th scope="col">P50 delay</th><th scope="col">P95 delay</th>
+                <th scope="col">Intervals</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+
+      <section class="card" aria-labelledby="share-h">
+        <h2 id="share-h">How often does the first price change</h2>
+        <p class="note">Share of imbalance prices first published in the last 7 days that were
+          changed or withdrawn at least once since.</p>
+        <div class="chart-wrap"><canvas id="share-chart" role="img"
+          aria-label="Bar chart of revised share per source and zone"></canvas></div>
+        <details class="data-table">
+          <summary>Show the numbers as a table</summary>
+          <div class="table-scroll">
+            <table id="share-table">
+              <thead><tr><th scope="col">Source</th><th scope="col">Zone</th>
+                <th scope="col">Revised share</th><th scope="col">Revised</th>
+                <th scope="col">Published</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+
+      <section class="card" aria-labelledby="reserve-h">
+        <h2 id="reserve-h">Reserve capacity</h2>
+        <p class="note">Capacity prices are usually auctioned ahead of delivery and then revised when
+          the next auction clears. &ldquo;First published&rdquo; shows the typical delay converted
+          to hours ahead; negative delays become hours ahead.</p>
+        <div class="table-scroll">
+          <table id="reserve-table">
+            <thead><tr><th scope="col">Source</th><th scope="col">Product</th>
+              <th scope="col">Zone</th><th scope="col">First published</th>
+              <th scope="col">Revised share</th><th scope="col">Revision lag</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="trend-h">
+        <h2 id="trend-h">Daily trend</h2>
+        <p class="note">P50 publication delay per source and product, one point per closed UTC day.
+          Positive values are minutes after the interval; negative values mean published ahead.</p>
+        <div class="chart-wrap line"><canvas id="trend-chart" role="img"
+          aria-label="Line chart of daily P50 delay per source"></canvas></div>
+        <details class="data-table">
+          <summary>Show the numbers as a table</summary>
+          <div class="table-scroll">
+            <table id="trend-table">
+              <thead><tr><th scope="col">Day</th><th scope="col">Source</th>
+                <th scope="col">Product</th><th scope="col">P50 delay</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+
+      <section class="card" aria-labelledby="rev-h">
+        <h2 id="rev-h">Latest revisions</h2>
+        <p class="note">Every price change recorded after first publication, newest first.</p>
+        <div class="controls filters">
+          <label for="f-source">Source <select id="f-source"></select></label>
+          <label for="f-data">Data <select id="f-data"></select></label>
+          <label for="f-zone">Zone <select id="f-zone"></select></label>
+        </div>
+        <div class="table-scroll">
+          <table id="rev-table">
+            <thead><tr><th scope="col">Interval (UTC)</th><th scope="col">Source</th>
+              <th scope="col">Data</th><th scope="col">Zone</th><th scope="col">Old &rarr; new</th>
+              <th scope="col">Revised after</th><th scope="col">Revised at</th></tr></thead>
+            <tbody id="rev-tbody"></tbody>
+          </table>
+        </div>
+        <p id="rev-empty" hidden>No revisions match these filters.</p>
+        <button id="rev-more" type="button" hidden>Show more</button>
+      </section>
+
+    </div>
+
+    <section class="card" aria-labelledby="why-h">
+      <h2 id="why-h">Why this exists</h2>
+      <p>Nordic balancing prices come from eSett, Energinet&rsquo;s Energi Data Service, Fingrid,
+        the ENTSO-E Transparency Platform and Svenska kraftn&auml;t. Their APIs return only the
+        current value: when a price is revised, the earlier value is gone. A collector polls the
+        imbalance prices every 15 minutes and the reserve capacity prices hourly, and keeps every
+        version it sees.</p>
+      <p>That record makes it possible to show when each price was first published and how often it
+        was revised afterwards &mdash; from the day collection started, not from the day a provider
+        happened to freeze its numbers. The site is built on the open-source
+        <code>nordic-balancing</code> Python library.</p>
+    </section>
+
+    <section class="card" id="waitlist-section" aria-labelledby="wl-h">
+      <h2 id="wl-h">Get revision alerts and API access</h2>
+      <form id="waitlist-form" novalidate>
+        <p>
+          <label for="wl-email">Email</label>
+          <input id="wl-email" name="email" type="email" required maxlength="254"
+            autocomplete="email" inputmode="email">
+        </p>
+        <p>
+          <label for="wl-role">Role (optional)</label>
+          <select id="wl-role" name="role">
+            <option value="">Prefer not to say</option>
+            <option value="trader">Energy trader</option>
+            <option value="brp">Balance responsible party</option>
+            <option value="bess">Battery / BESS</option>
+            <option value="analyst">Analyst</option>
+            <option value="researcher">Researcher</option>
+            <option value="other">Other</option>
+          </select>
+        </p>
+        <p class="hp" aria-hidden="true">
+          <label for="wl-website">Website</label>
+          <input id="wl-website" name="website" type="text" tabindex="-1" autocomplete="off">
+        </p>
+        <p><button type="submit">Join the waitlist</button></p>
+        <p id="wl-msg" role="status"></p>
+        <p class="privacy">Your email is used only to tell you when alerts and API access launch.
+          No tracking. Ask to be removed at any time<span id="wl-contact"></span>.</p>
+      </form>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <h2 class="visually-hidden">Data sources and licences</h2>
+    <ul class="sources">
+      <li><a href="https://www.esett.com/" rel="noopener">eSett</a> &mdash; see the provider&rsquo;s terms</li>
+      <li><a href="https://www.energidataservice.dk/" rel="noopener">Energinet Energi Data Service</a> &mdash; CC BY 4.0</li>
+      <li><a href="https://data.fingrid.fi/" rel="noopener">Fingrid open data</a> &mdash; CC BY 4.0</li>
+      <li><a href="https://transparency.entsoe.eu/" rel="noopener">ENTSO-E Transparency Platform</a> &mdash; see the provider&rsquo;s terms</li>
+      <li><a href="https://mimer.svk.se/" rel="noopener">Svenska kraftn&auml;t (Mimer)</a> &mdash; see the provider&rsquo;s terms</li>
+    </ul>
+    <p>Not affiliated with any of these organisations.</p>
+    <p>Built on <a href="https://pypi.org/project/nordic-balancing/" rel="noopener">nordic-balancing</a>
+      (<a href="https://github.com/Razikale365/nordic-balancing" rel="noopener">source on GitHub</a>)<span id="collector-link"></span>.</p>
+    <p class="fine">Price data belongs to its providers under their licences.</p>
+  </footer>
+</body>
+</html>

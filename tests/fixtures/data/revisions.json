@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "generated_at": "2026-10-24T19:00:00Z",
+  "revisions": [
+    {
+      "source": "esett", "data": "imbalance", "zone": "DK1",
+      "interval_start": "2026-10-24T16:45:00Z", "interval_minutes": 15,
+      "field": "imbalance_price_eur", "unit": "EUR/MWh",
+      "old": 45.32, "new": 47.10,
+      "first_published_at": "2026-10-24T17:52:03Z", "revised_at": "2026-10-24T18:44:27Z",
+      "kind": "changed"
+    },
+    {
+      "source": "svk", "data": "FCR-N", "zone": "SE3",
+      "interval_start": "2026-10-24T15:00:00Z", "interval_minutes": 60,
+      "field": "price_eur_per_mw", "unit": "EUR/MW",
+      "old": 12.4, "new": 11.85,
+      "first_published_at": "2026-10-23T09:12:00Z", "revised_at": "2026-10-24T18:02:11Z",
+      "kind": "changed"
+    },
+    {
+      "source": "fingrid", "data": "FCR-D up", "zone": "FI",
+      "interval_start": "2026-10-24T14:00:00Z", "interval_minutes": 60,
+      "field": "price_eur_per_mw", "unit": "EUR/MW",
+      "old": 8.9, "new": 9.05,
+      "first_published_at": "2026-10-23T08:30:00Z", "revised_at": "2026-10-24T17:15:40Z",
+      "kind": "changed"
+    },
+    {
+      "source": "esett", "data": "imbalance", "zone": "DK2",
+      "interval_start": "2026-10-24T13:15:00Z", "interval_minutes": 15,
+      "field": "imbalance_price_dkk", "unit": "DKK/MWh",
+      "old": 312.5, "new": 318.75,
+      "first_published_at": "2026-10-24T14:22:51Z", "revised_at": "2026-10-24T16:05:00Z",
+      "kind": "changed"
+    },
+    {
+      "source": "svk", "data": "FCR-D up", "zone": "SE3",
+      "interval_start": "2026-10-24T10:00:00Z", "interval_minutes": 60,
+      "field": "price_eur_per_mw", "unit": "EUR/MW",
+      "old": 5.6, "new": null,
+      "first_published_at": "2026-10-22T09:05:00Z", "revised_at": "2026-10-24T11:40:19Z",
+      "kind": "withdrawn"
+    },
+    {
+      "source": "entsoe", "data": "imbalance", "zone": "FI",
+      "interval_start": "2026-10-23T20:00:00Z", "interval_minutes": 15,
+      "field": "imbalance_price_eur", "unit": "EUR/MWh",
+      "old": 38.2, "new": 36.95,
+      "first_published_at": "2026-10-23T21:01:12Z", "revised_at": "2026-10-23T22:10:00Z",
+      "kind": "changed"
+    }
+  ]
+}

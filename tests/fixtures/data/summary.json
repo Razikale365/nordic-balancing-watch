@@ -1,0 +1,105 @@
+{
+  "schema": 1,
+  "generated_at": "2026-10-24T19:00:00Z",
+  "collecting_since": "2026-10-21T06:00:00Z",
+  "observations_total": 15234,
+  "polls_24h": {"ok": 1410, "skipped": 30, "error": 2},
+  "groups": [
+    {
+      "source": "entsoe",
+      "data": "imbalance",
+      "zone": "FI",
+      "last7": {
+        "n": 380, "excluded": 1,
+        "p50": 55.4, "p95": 88.0, "max": 240.2,
+        "published": 372, "revised": 21, "revised_share": 0.0565,
+        "revisions": 23, "withdrawn": 1, "lag_p50_h": 1.6, "lag_max_h": 4.0
+      },
+      "daily": [
+        {"day": "2026-10-21", "n": 95, "p50": 54.9, "p95": 85.0, "published": 93, "revised": 5, "revisions": 5},
+        {"day": "2026-10-22", "n": 96, "p50": 55.8, "p95": 90.1, "published": 94, "revised": 6, "revisions": 6},
+        {"day": "2026-10-23", "n": 96, "p50": 55.1, "p95": 87.3, "published": 95, "revised": 5, "revisions": 6}
+      ]
+    },
+    {
+      "source": "esett",
+      "data": "imbalance",
+      "zone": "DK1",
+      "last7": {
+        "n": 560, "excluded": 2,
+        "p50": 61.5, "p95": 92.0, "max": 615.0,
+        "published": 555, "revised": 108, "revised_share": 0.1946,
+        "revisions": 117, "withdrawn": 0, "lag_p50_h": 1.1, "lag_max_h": 3.4
+      },
+      "daily": [
+        {"day": "2026-10-21", "n": 92, "p50": 60.8, "p95": 91.0, "published": 91, "revised": 17, "revisions": 18},
+        {"day": "2026-10-22", "n": 94, "p50": 61.9, "p95": 93.5, "published": 92, "revised": 19, "revisions": 20},
+        {"day": "2026-10-23", "n": 93, "p50": 61.2, "p95": 92.4, "published": 93, "revised": 18, "revisions": 19}
+      ]
+    },
+    {
+      "source": "esett",
+      "data": "imbalance",
+      "zone": "DK2",
+      "last7": {
+        "n": 561, "excluded": 0,
+        "p50": 62.3, "p95": 96.4, "max": 420.8,
+        "published": 553, "revised": 95, "revised_share": 0.1718,
+        "revisions": 101, "withdrawn": 0, "lag_p50_h": 1.3, "lag_max_h": 3.8
+      },
+      "daily": [
+        {"day": "2026-10-21", "n": 94, "p50": 62.0, "p95": 95.0, "published": 92, "revised": 15, "revisions": 16},
+        {"day": "2026-10-22", "n": 93, "p50": 62.6, "p95": 97.2, "published": 92, "revised": 17, "revisions": 18},
+        {"day": "2026-10-23", "n": 94, "p50": 62.1, "p95": 96.0, "published": 93, "revised": 16, "revisions": 17}
+      ]
+    },
+    {
+      "source": "fingrid",
+      "data": "FCR-D up",
+      "zone": "FI",
+      "last7": {
+        "n": 96, "excluded": 0,
+        "p50": -2520.0, "p95": -1800.0, "max": -60.0,
+        "published": 96, "revised": 88, "revised_share": 0.9167,
+        "revisions": 94, "withdrawn": 2, "lag_p50_h": 8.7, "lag_max_h": 11.2
+      },
+      "daily": [
+        {"day": "2026-10-21", "n": 24, "p50": -2540.0, "p95": -1820.0, "published": 24, "revised": 22, "revisions": 23},
+        {"day": "2026-10-22", "n": 24, "p50": -2510.0, "p95": -1790.0, "published": 24, "revised": 22, "revisions": 24},
+        {"day": "2026-10-23", "n": 24, "p50": -2500.0, "p95": -1810.0, "published": 24, "revised": 22, "revisions": 23}
+      ]
+    },
+    {
+      "source": "svk",
+      "data": "FCR-D up",
+      "zone": "SE3",
+      "last7": {
+        "n": 120, "excluded": 0,
+        "p50": -2880.0, "p95": -1500.0, "max": -120.0,
+        "published": 118, "revised": 110, "revised_share": 0.9322,
+        "revisions": 118, "withdrawn": 0, "lag_p50_h": 9.1, "lag_max_h": 14.0
+      },
+      "daily": [
+        {"day": "2026-10-21", "n": 24, "p50": -2890.0, "p95": -1520.0, "published": 24, "revised": 22, "revisions": 24},
+        {"day": "2026-10-22", "n": 24, "p50": -2870.0, "p95": -1490.0, "published": 23, "revised": 22, "revisions": 23},
+        {"day": "2026-10-23", "n": 24, "p50": -2885.0, "p95": -1505.0, "published": 24, "revised": 22, "revisions": 24}
+      ]
+    },
+    {
+      "source": "svk",
+      "data": "FCR-N",
+      "zone": "SE3",
+      "last7": {
+        "n": 168, "excluded": 1,
+        "p50": -2760.0, "p95": -1380.0, "max": -90.0,
+        "published": 165, "revised": 158, "revised_share": 0.9576,
+        "revisions": 162, "withdrawn": 1, "lag_p50_h": 9.0, "lag_max_h": 13.5
+      },
+      "daily": [
+        {"day": "2026-10-21", "n": 24, "p50": -2770.0, "p95": -1400.0, "published": 24, "revised": 23, "revisions": 23},
+        {"day": "2026-10-22", "n": 24, "p50": -2750.0, "p95": -1370.0, "published": 23, "revised": 23, "revisions": 24},
+        {"day": "2026-10-23", "n": 24, "p50": -2765.0, "p95": -1385.0, "published": 24, "revised": 23, "revisions": 23}
+      ]
+    }
+  ]
+}

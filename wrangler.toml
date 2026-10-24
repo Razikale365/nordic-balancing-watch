@@ -1,0 +1,9 @@
+name = "nordic-balancing-watch"
+pages_build_output_dir = "site"
+compatibility_date = "2026-10-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "nbw-waitlist"
+database_id = "REPLACE_WITH_D1_ID"
+migrations_dir = "migrations"
