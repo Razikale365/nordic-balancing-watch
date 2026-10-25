@@ -610,8 +610,9 @@
     var age = Date.now() - Date.parse(s.generated_at), stale = age > STALE_MS;
     $("live-dot").classList.toggle("stale", stale);
     $("status-line").innerHTML = (stale ? "Delayed" : "Live") + " · updated " +
-      '<time datetime="' + esc(s.generated_at) + '" title="' + esc(dateTime(s.generated_at) + " " + tzName(s.generated_at)) + '">' +
-      esc(relTime(s.generated_at)) + "</time>" +
+      '<time datetime="' + esc(s.generated_at) + '">' +
+      esc(fmtTime(s.generated_at, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) + " " + tzName(s.generated_at)) +
+      "</time> (" + esc(relTime(s.generated_at)) + ")" +
       (s.collecting_since ? " · collecting since " + esc(longDate(s.collecting_since)) : "");
     var b = $("stale-banner");
     if (stale) {
