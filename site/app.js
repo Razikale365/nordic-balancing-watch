@@ -224,6 +224,17 @@
 
   function renderReserveTable(s) {
     var groups = (s.groups || []).filter(function (g) { return g.data !== "imbalance"; });
+    function measured(g) { var l = g.last7 || {}; return l.n > 0 || l.revisions > 0; }
+    /* Products with nothing measured yet are named in one line, not as empty rows. */
+    var pending = {};
+    groups.forEach(function (g) {
+      if (!measured(g)) { pending[g.source + " " + g.data] = true; }
+    });
+    var names = Object.keys(pending).sort();
+    $("reserve-pending").textContent = names.length
+      ? "No first publication measured yet in the last 7 days: " + names.join(", ") + "."
+      : "";
+    groups = groups.filter(measured);
     tableRows($("reserve-table").tBodies[0], groups.map(function (g) {
       var l = g.last7 || {};
       return [cell(esc(g.source)), cell(esc(g.data)), cell(esc(g.zone)),
