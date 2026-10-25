@@ -26,7 +26,7 @@ jobs:
         run: python -m pytest -q
 
       - name: Node tests
-        run: node --test tests/
+        run: node --test tests/*.test.mjs
 
       - name: Fixture data follows the contract
         run: python scripts/check_data.py tests/fixtures/data

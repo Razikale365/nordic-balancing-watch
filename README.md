@@ -34,9 +34,10 @@ A separate collector (built on the open-source
 every 15 minutes and reserve capacity prices hourly. It writes `summary.json` and
 `revisions.json` — the format is the schema-1 contract validated by
 `scripts/check_data.py` — and pushes them hourly to the `data` branch of this repository.
-The deploy workflow copies that branch into `site/data`, validates it (a bad push can never
-replace a good site) and deploys `site/` to Cloudflare Pages. The workflow also runs hourly on
-a schedule, so a data-only update republishes the site without a code change.
+The site reads them through a small Pages Function (`functions/data/[name].js`) that fetches
+the two files from that branch, rejects anything that is not schema-1 JSON, and caches them
+at the edge for five minutes. New data therefore needs no redeploy; the deploy workflow runs
+only when the site's code changes.
 
 ## Data sources and licences
 
@@ -75,7 +76,7 @@ python -m http.server -d site
 
 ```
 python -m pytest -q                        # check_data.py contract tests
-node --test tests/                         # waitlist function tests
+node --test tests/*.test.mjs               # waitlist and data function tests
 python scripts/check_data.py tests/fixtures/data
 ```
 
@@ -87,6 +88,6 @@ python scripts/check_data.py tests/fixtures/data
    printed id into `database_id` in `wrangler.toml`. The deploy workflow applies
    `migrations/` remotely on every run.
 3. Add two repository secrets: `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
-   Without them the workflow still validates data but skips the deploy step.
+   Without them the workflow still runs the tests but skips the deploy step.
 4. Give the collector a deploy key with write access so it can push `summary.json` and
    `revisions.json` to the `data` branch every hour.

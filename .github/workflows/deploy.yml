@@ -3,8 +3,6 @@ name: Deploy
 on:
   push:
     branches: [main]
-  schedule:
-    - cron: '25 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -23,32 +21,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
 
-      - name: Fetch the data branch into site/data
-        run: |
-          if git ls-remote --exit-code --heads origin data >/dev/null 2>&1; then
-            git fetch --depth=1 origin data
-            mkdir -p site/data
-            git archive FETCH_HEAD | tar -x -C site/data
-            echo "data branch extracted into site/data"
-          else
-            echo "no data branch yet; deploying without data files"
-          fi
-
-      - name: Validate the data files
-        run: |
-          if [ -f site/data/summary.json ]; then
-            python scripts/check_data.py site/data
-          else
-            echo "no data files; nothing to validate"
-          fi
+      - name: Test the functions
+        run: node --test tests/*.test.mjs
 
       - name: Apply D1 migrations and deploy to Cloudflare Pages
         if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}

@@ -1,4 +1,4 @@
-# private notes and local data
+# local data and secrets
 .env
 .dev.vars
 site/data/
