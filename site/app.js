@@ -18,7 +18,28 @@
   var COUNTRY = { DK: "Denmark", FI: "Finland", NO: "Norway", SE: "Sweden" };
   var ZONES = ["DK1", "DK2", "FI", "NO1", "NO2", "NO3", "NO4", "NO5", "SE1", "SE2", "SE3", "SE4"];
 
-  var state = { tz: load("nbw.tz", "UTC"), summary: null, revisions: [], tables: [] };
+  var GLOSSARY = {
+    imbalance: ["Imbalance price", "The price paid or received, per megawatt-hour, by companies whose actual production or use differed from what they planned. Set separately for every 15 minutes and every price zone, after the fact."],
+    interval: ["Settlement interval", "The 15-minute block that every imbalance price belongs to. Since 2023 the Nordic market settles in quarter-hours."],
+    zone: ["Price zone (bidding zone)", "An area with one price. Denmark has DK1 (west) and DK2 (east); Finland is one zone (FI); Norway has NO1–NO5 (NO1 Oslo, NO2 south, NO3 middle, NO4 north, NO5 west); Sweden has SE1–SE4 from north to south."],
+    esett: ["eSett", "The company that runs the joint imbalance settlement for Denmark, Finland, Norway and Sweden, owned by the national grid operators. Its figures are the ones the money is settled on."],
+    entsoe: ["ENTSO-E", "The association of European grid operators. Its Transparency Platform republishes market data from every member country."],
+    tso: ["TSO (national grid operator)", "Energinet in Denmark, Fingrid in Finland, Statnett in Norway and Svenska kraftnät in Sweden. Energinet and Fingrid publish imbalance prices on their own open-data sites."],
+    brp: ["Balance responsible party", "A company that has taken on the financial responsibility for a group of producers or consumers being in balance. It pays or receives the imbalance price."],
+    median: ["Median", "The middle value: half of the intervals were faster, half slower. A good picture of a typical day."],
+    p95: ["95th percentile", "95 out of 100 intervals were published by this time; only 1 in 20 took longer. A picture of a bad day."],
+    revision: ["Revision", "Any change to a price after it was first published."],
+    withdrawn: ["Withdrawal", "A price that was published and later disappeared from the source."],
+    reserve: ["Reserve capacity", "Payment for being ready to raise or lower power at short notice. The grid operator buys it ahead of time and calls on it when needed."],
+    fcr: ["FCR-N and FCR-D", "Frequency containment reserves: the fastest reserves, reacting within seconds. FCR-N handles normal small swings, FCR-D (up and down) disturbances such as a power plant tripping."],
+    afrr: ["aFRR", "Automatic frequency restoration reserve: brings the frequency back to 50 Hz within minutes, on an automatic signal."],
+    mfrr: ["mFRR", "Manual frequency restoration reserve: slower reserves activated on request, within about 15 minutes."],
+    auction: ["D-2 and D-1 auctions", "Reserve capacity is bought two days (D-2) and one day (D-1) before delivery. A price published after the first auction can change when the next one clears."]
+  };
+
+  var state = { tz: load("nbw.tz", "UTC"), zones: load("nbw.zones", null), summary: null, revisions: [], tables: {} };
+  function inZones(z) { return !state.zones || state.zones.indexOf(z) >= 0; }
+  function term(key, text) { return '<span class="term" data-term="' + key + '">' + text + "</span>"; }
 
   /* ---------- small helpers ---------- */
 
@@ -52,6 +73,12 @@
   function fmtPct(x, digits) {
     if (x == null) return "—";
     return (x * 100).toFixed(digits == null ? (x > 0 && x < 0.1 ? 1 : 0) : digits) + "%";
+  }
+  /* "2 in 5", "1 in 6": the nearest simple fraction, for plain-language sentences. */
+  function simpleFraction(x) {
+    var c = [[1, 2], [2, 5], [1, 3], [1, 4], [1, 5], [1, 6], [1, 8], [1, 10], [1, 20], [1, 50], [1, 100]];
+    var best = c.reduce(function (b, f) { return Math.abs(f[0] / f[1] - x) < Math.abs(b[0] / b[1] - x) ? f : b; });
+    return best[0] === 1 && best[1] === 2 ? "half" : best[0] + " in " + best[1];
   }
   function fmtMin(m) { return m == null ? "—" : Math.round(m) + " min"; }
   function fmtDur(min) {
@@ -171,6 +198,30 @@
     });
   }
 
+  /* Glossary terms: hover, keyboard focus or tap shows the definition. */
+  function bindTerms(root) {
+    root.querySelectorAll(".term:not([data-bound])").forEach(function (node) {
+      var g = GLOSSARY[node.getAttribute("data-term")];
+      if (!g) return;
+      node.setAttribute("data-bound", "1");
+      node.setAttribute("tabindex", "0");
+      node.setAttribute("role", "button");
+      node.setAttribute("aria-label", node.textContent + ": " + g[1]);
+      var html = '<div class="t-title">' + esc(g[0]) + '</div><div>' + esc(g[1]) + "</div>";
+      var at = function () { var r = node.getBoundingClientRect(); showTip(html, r.left, r.bottom); };
+      node.addEventListener("pointerenter", function (e) { if (e.pointerType !== "touch") showTip(html, e.clientX, e.clientY); });
+      node.addEventListener("pointerleave", function (e) { if (e.pointerType !== "touch") hideTip(); });
+      node.addEventListener("focus", at);
+      node.addEventListener("blur", hideTip);
+      node.addEventListener("click", function (e) { e.stopPropagation(); at(); });
+    });
+  }
+  function renderGlossary() {
+    $("glossary").innerHTML = Object.keys(GLOSSARY).map(function (k) {
+      return '<div id="g-' + k + '"><dt>' + esc(GLOSSARY[k][0]) + "</dt><dd>" + esc(GLOSSARY[k][1]) + "</dd></div>";
+    }).join("");
+  }
+
   /* ---------- charts (inline SVG) ---------- */
 
   function niceStep(max, target) {
@@ -201,8 +252,13 @@
       body += '<rect class="row-hit" x="0" y="' + y + '" width="' + W + '" height="' + ROW +
         '" rx="4" tabindex="0" data-tip="' + (tips.length - 1) + '" aria-label="' + esc(r.aria) + '"/>';
       body += '<text class="row-label" x="8" y="' + (cy + 4) + '" pointer-events="none">' + esc(r.label) + "</text>";
+      var placed = [];
       r.items.forEach(function (it) {
         var c = catColor(it.cat), x1 = x(it.p50), x2 = x(it.p95 == null ? it.p50 : it.p95);
+        /* Markers that would sit on top of each other are moved apart vertically. */
+        var clash = placed.filter(function (px) { return Math.abs(px - x1) < 9; }).length;
+        placed.push(x1);
+        var cy = y + ROW / 2 + (clash ? (clash % 2 ? -5 : 5) : 0);
         body += '<g pointer-events="none">';
         if (x2 - x1 > 1) {
           body += '<line x1="' + x1 + '" x2="' + x2 + '" y1="' + cy + '" y2="' + cy + '" stroke="' + c +
@@ -420,6 +476,11 @@
     this.render();
   }
 
+  DataTable.prototype.setRows = function (rows) {
+    this.rows = rows;
+    this.limit = this.cfg.page || 50;
+    this.render();
+  };
   DataTable.prototype.persist = function () {
     save("nbw.table." + this.cfg.id, { order: this.order, hidden: this.hidden, sort: this.sort });
   };
@@ -639,14 +700,14 @@
     var es = (byCat.esett || []).map(function (g) { return g.last7.p50; }).filter(function (v) { return v != null; });
     if (es.length) {
       var lo = Math.round(Math.min.apply(null, es)), hi = Math.round(Math.max.apply(null, es));
-      tiles.push(["eSett settlement price", (lo === hi ? lo : lo + "–" + hi) + "<small>min</small>", "after the interval, by zone"]);
+      tiles.push(["eSett publishes after", (lo === hi ? lo : lo + "–" + hi) + "<small>min</small>", "typical, depending on the zone"]);
     }
     var pub = sum(imb.map(function (g) { return g.last7.published || 0; }));
     var rev = sum(imb.map(function (g) { return g.last7.revised || 0; }));
     if (pub) tiles.push(["First prices changed later", fmtPct(rev / pub, 1), fmtInt(rev) + " of " + fmtInt(pub) + " imbalance prices"]);
     var revisions = sum((s.groups || []).map(function (g) { return (g.last7 && g.last7.revisions) || 0; }));
     var p = s.polls_24h || {}, total = (p.ok || 0) + (p.skipped || 0) + (p.error || 0);
-    tiles.push(["Revisions logged", fmtInt(revisions), "last 7 days" + (total ? " · " + fmtPct(p.ok / total) + " of polls ok" : "")]);
+    tiles.push(["Price changes logged", fmtInt(revisions), "last 7 days" + (total ? " · " + fmtPct(p.ok / total) + " of checks ok" : "")]);
     $("stats").innerHTML = tiles.map(function (t) {
       return '<div class="stat"><dt>' + esc(t[0]) + '</dt><dd><span class="v">' + t[1] + '</span><span class="s">' + esc(t[2]) + "</span></dd></div>";
     }).join("");
@@ -660,15 +721,16 @@
     var lead = Object.keys(wins).sort(function (a, b) { return wins[b] - wins[a]; })[0];
     if (lead) {
       var leadP50 = imb.filter(function (g) { return cat(g.source) === lead; }).map(function (g) { return g.last7.p50; });
-      out.push("<b>" + esc(CAT_LABEL[lead]) + "</b> has the first imbalance price in <b>" + wins[lead] + " of " +
-        zones.length + " zones</b>, a median <b>" + Math.round(Math.min.apply(null, leadP50)) + "–" +
-        Math.round(Math.max.apply(null, leadP50)) + " min</b> after the interval ends.");
+      var lo = Math.round(Math.min.apply(null, leadP50)), hi = Math.round(Math.max.apply(null, leadP50));
+      out.push("The " + term("imbalance", "imbalance price") + " usually shows up first on <b>" + esc(CAT_LABEL[lead]) +
+        "</b>: in <b>" + wins[lead] + " of " + zones.length + "</b> " + term("zone", "price zones") + ", about <b>" +
+        (lo === hi ? lo : lo + "–" + hi) + " minutes</b> after each 15 minutes end.");
     }
     var gaps = imb.filter(function (g) { return g.source === "esett" && fastest[g.zone] && fastest[g.zone].source !== "esett"; })
       .map(function (g) { return g.last7.p50 - fastest[g.zone].last7.p50; });
     if (gaps.length) {
-      out.push("<b>eSett</b>, the Nordic imbalance settlement, publishes the same prices <b>" +
-        Math.round(Math.min.apply(null, gaps)) + "–" + Math.round(Math.max.apply(null, gaps)) + " min later</b>.");
+      out.push(term("esett", "eSett") + ", where the money is settled, shows the same prices <b>" +
+        Math.round(Math.min.apply(null, gaps)) + "–" + Math.round(Math.max.apply(null, gaps)) + " minutes later</b>.");
     }
     var top = imb.filter(function (g) { return g.last7.published >= 20 && g.last7.revised_share > 0; })
       .sort(function (a, b) { return b.last7.revised_share - a.last7.revised_share; })[0];
@@ -677,15 +739,21 @@
         var gs = imb.filter(function (g) { return cat(g.source) === c; });
         return gs.length && gs.every(function (g) { return !g.last7.revisions; });
       }).map(function (c) { return CAT_LABEL[c]; });
-      out.push("<b>" + fmtPct(top.last7.revised_share) + "</b> of " + esc(SRC_LABEL[top.source]) + "&rsquo;s first prices for <b>" +
-        esc(top.zone) + "</b> were changed afterwards" + (top.last7.lag_p50_h != null ? ", typically <b>" + fmtHours(top.last7.lag_p50_h) + "</b> later" : "") + "." +
-        (clean.length ? " No change was seen from " + esc(clean.join(" or ")) + "." : ""));
+      var share = top.last7.revised_share;
+      var plain = "About " + simpleFraction(share);
+      out.push("<b>" + plain + "</b> (" + fmtPct(share) + ") of the first prices " + esc(SRC_LABEL[top.source]) + " showed for <b>" +
+        esc(country(top.zone)) + (country(top.zone) !== top.zone ? " (" + esc(top.zone) + ")" : "") + "</b> were changed later" +
+        (top.last7.lag_p50_h != null ? ", typically <b>" + fmtHours(top.last7.lag_p50_h) + "</b> after" : "") + "." +
+        (clean.length ? " " + esc(clean.join(" and ")) + " did not change any." : ""));
     }
     var zeros = revs.filter(function (r) { return r.source === "esett" && r.kind === "changed" && r.old === 0; });
+    var esRevs = revs.filter(function (r) { return r.source === "esett" && r.data === "imbalance"; });
     if (zeros.length >= 3) {
       var zz = zoneRange(zeros.map(function (r) { return r.zone; }));
-      out.push("In <b>" + fmtInt(zeros.length) + "</b> of the logged eSett revisions (" + esc(zz) +
-        ") the first published price was <b>0.00</b> and the real price followed later.");
+      var lead0 = zeros.length === esRevs.length ? "None of those changes corrected a real price"
+        : zeros.length * 2 > esRevs.length ? "Most of those changes did not correct a real price" : "Some of those changes did not correct a real price";
+      out.push(lead0 + ": eSett first showed <b>0.00</b> and replaced it with the actual price later (" +
+        fmtInt(zeros.length) + " of " + fmtInt(esRevs.length) + " changes, " + esc(zz) + ").");
     }
     var res = reserveGroups(s).filter(function (g) { return g.last7.revisions > 0; });
     if (res.length) {
@@ -697,13 +765,92 @@
       var gs = bySrc[src], n = sum(gs.map(function (g) { return g.last7.revisions; }));
       var products = uniq(gs.map(function (g) { return g.data.split(" ")[0]; }));
       var lag = median(gs.map(function (g) { return g.last7.lag_p50_h; }).filter(function (v) { return v != null; }));
-      out.push("Reserve capacity: " + esc(SRC_LABEL[src]) + "&rsquo;s " + esc(products.join(" and ")) + " prices (" +
-        esc(zoneRange(gs.map(function (g) { return g.zone; }))) + ") were re-priced in <b>" + fmtInt(n) +
-        " zone-quarter-hours</b>" +
-        (lag != null ? ", typically <b>" + fmtHours(lag) + "</b> after first publication" : "") + ".");
+      var leadMin = median(gs.map(function (g) { return g.last7.p50; }).filter(function (v) { return v != null && v < 0; }));
+      out.push("Prices for " + term("reserve", "standby power") + " (" + esc(products.join(" and ")) + " in " +
+        esc(zoneRange(gs.map(function (g) { return g.zone; }))) + ") come out" +
+        (leadMin != null ? " about <b>" + fmtHours(-leadMin / 60) + " before delivery</b>" : " ahead of delivery") +
+        " and are then updated" + (lag != null ? " about <b>" + fmtHours(lag) + "</b> later" : "") +
+        ", when the next " + term("auction", "auction") + " clears (" + fmtInt(n) + " zone-quarter-hours re-priced).");
     }
     $("findings").innerHTML = out.length ? out.map(function (h) { return "<li><span>" + h + "</span></li>"; }).join("")
       : "<li><span>Not enough data yet: findings appear after the first full day of collection.</span></li>";
+    bindTerms($("findings"));
+  }
+
+  /* One worked example under the chart: the zone where sources differ the most. */
+  function renderHowTo(s) {
+    var imb = imbalanceGroups(s), best = null;
+    uniq(imb.map(function (g) { return g.zone; })).forEach(function (z) {
+      var gs = imb.filter(function (g) { return g.zone === z && g.last7.p50 != null; })
+        .sort(function (a, b) { return a.last7.p50 - b.last7.p50; });
+      if (gs.length < 2) return;
+      var gap = gs[gs.length - 1].last7.p50 - gs[0].last7.p50;
+      if (!best || gap > best.gap) best = { zone: z, fast: gs[0], slow: gs[gs.length - 1], gap: gap };
+    });
+    if (!best) { $("delay-howto").innerHTML = ""; return; }
+    var f = best.fast, w = best.slow;
+    $("delay-howto").innerHTML = "<b>How to read it:</b> in " + esc(best.zone) + " (" + esc(country(best.zone)) + "), " +
+      swatch(cat(f.source)) + " " + esc(SRC_LABEL[f.source]) + " usually has the price <b>" + fmtMin(f.last7.p50) +
+      "</b> after the 15 minutes end. " + swatch(cat(w.source)) + " " + esc(SRC_LABEL[w.source]) + " takes <b>" +
+      fmtMin(w.last7.p50) + "</b>, and up to " + fmtMin(w.last7.p95) + " on a bad day.";
+  }
+
+  /* ---------- right now ---------- */
+
+  function renderBoard(s) {
+    var now = (s.now || []).filter(function (e) { return inZones(e.zone); });
+    var table = $("board");
+    if (!now.length) {
+      table.innerHTML = '<tbody><tr class="dt-empty"><td>No recent price in the selected zones.</td></tr></tbody>';
+      $("board-legend").innerHTML = ""; $("board-note").textContent = ""; $("board-asof").textContent = "";
+      return;
+    }
+    $("board-asof").textContent = "as of " + fmtTime(s.generated_at, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) + " " + tzName(s.generated_at);
+    var cats = CAT_ORDER.filter(function (c) { return now.some(function (e) { return cat(e.source) === c; }); });
+    var p95 = {};
+    (s.groups || []).forEach(function (g) { if (g.data === "imbalance" && g.last7) p95[g.source + "|" + g.zone] = g.last7.p95; });
+    var zones = uniq(now.map(function (e) { return e.zone; })).sort(function (a, b) { return zoneIndex(a) - zoneIndex(b); });
+    var zeroSeen = false;
+    var head = '<thead><tr><th scope="col" class="zone-col"><span class="th-pad">Zone</span></th>' + cats.map(function (c) {
+      return '<th scope="col"><span class="th-pad"><span class="src">' + swatch(c) + esc(CAT_LABEL[c]) + "</span></span></th>";
+    }).join("") + "</tr></thead>";
+    var body = zones.map(function (z) {
+      var entries = now.filter(function (e) { return e.zone === z; });
+      var newest = entries.reduce(function (m, e) { return !m || e.interval_start > m.interval_start ? e : m; }, null);
+      return '<tr><td class="zone-col"><b>' + esc(z) + "</b><span>" + esc(country(z)) + "</span></td>" + cats.map(function (c) {
+        var e = entries.filter(function (x) { return cat(x.source) === c; })[0];
+        if (!e) return '<td class="muted">—</td>';
+        var zero = e.price === 0 && e.source === "esett";
+        zeroSeen = zeroSeen || zero;
+        var limit = p95[e.source + "|" + z];
+        var late = limit != null && e.minutes_since_end > limit + 30;
+        var isNewest = entries.length > 1 && e === newest && entries.filter(function (x) { return x.interval_start === e.interval_start; }).length === 1;
+        return "<td><span class=\"px\">" + fmtPrice(e.price) + (zero ? "*" : "") + '</span> <span class="muted small">EUR/MWh</span>' +
+          '<span class="px-sub">for ' + esc(fmtTime(e.interval_start, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })) +
+          " · " + esc(fmtDur(e.minutes_since_end)) + " ago" + (cat(e.source) === "tso" ? " · " + esc(SRC_LABEL[e.source]) : "") + "</span>" +
+          (isNewest ? '<span class="badge newest">newest</span> ' : "") +
+          (late ? '<span class="badge late" title="Older than this source usually is">⚠ later than usual</span>' : "") + "</td>";
+      }).join("") + "</tr>";
+    }).join("");
+    table.innerHTML = head + "<tbody>" + body + "</tbody>";
+    $("board-legend").innerHTML = "";
+    $("board-note").textContent = (zeroSeen ? "* eSett often shows 0.00 first and replaces it with the real price later. " : "") +
+      "Times are when each 15-minute interval started, and how long ago it ended. " +
+      "“Later than usual” means the newest price is more than 30 minutes older than this source’s 95th percentile.";
+  }
+
+  function renderRecent(s, revs) {
+    var since = Date.parse(s.generated_at) - 3 * 3600000;
+    var recent = revs.filter(function (r) { return inZones(r.zone) && Date.parse(r.revised_at) >= since; })
+      .sort(function (a, b) { return a.revised_at < b.revised_at ? 1 : -1; });
+    var shown = recent.slice(0, 8);
+    var hm = function (iso) { return fmtTime(iso, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }); };
+    $("recent").innerHTML = shown.length ? shown.map(function (r) {
+      return '<li><span class="t">' + esc(hm(r.revised_at)) + "</span><span>" + srcCell(r.source) + " · " + esc(r.zone) +
+        ' <span class="muted">' + esc(r.data === "imbalance" ? "for " + hm(r.interval_start) : r.data) + "</span></span>" +
+        '<span class="v">' + fmtPrice(r.old) + " → " + (r.new == null ? "withdrawn" : fmtPrice(r.new)) + "</span></li>";
+    }).join("") + (recent.length > shown.length ? '<li class="more">and ' + (recent.length - shown.length) + " more</li>" : "")
+      : '<li class="more">No price changed in the last 3 hours' + (state.zones ? " in the selected zones" : "") + ".</li>";
   }
 
   function renderDelay(s) {
@@ -829,7 +976,8 @@
 
   function renderZonesTable(s) {
     var rows = imbalanceGroups(s);
-    state.tables.push(new DataTable($("zones-table"), {
+    if (state.tables.zones) { state.tables.zones.setRows(rows); return; }
+    state.tables.zones = new DataTable($("zones-table"), {
       id: "zones", rows: rows, page: 100, csvName: "nordic-imbalance-publication.csv",
       sort: { key: "zone", dir: "asc" }, filters: ["country", "source"],
       columns: [
@@ -849,7 +997,7 @@
         { key: "revisions", label: "Changes", num: true, get: function (g) { return g.last7.revisions; }, html: function (g) { return fmtInt(g.last7.revisions); } },
         { key: "lag", label: "Typical change after", csvLabel: "Typical change after (h)", num: true, get: function (g) { return g.last7.lag_p50_h; }, html: function (g) { return fmtHours(g.last7.lag_p50_h); } }
       ]
-    }));
+    });
   }
 
   function renderLead(s) {
@@ -898,7 +1046,8 @@
   function renderReserveTable(s) {
     var rows = reserveGroups(s).filter(function (g) { return g.last7.n > 0 || g.last7.revisions > 0; });
     var ahead = function (m) { return m == null ? null : -m / 60; };
-    state.tables.push(new DataTable($("reserve-table"), {
+    if (state.tables.reserves) { state.tables.reserves.setRows(rows); return; }
+    state.tables.reserves = new DataTable($("reserve-table"), {
       id: "reserves", rows: rows, page: 100, csvName: "nordic-reserve-publication.csv",
       sort: { key: "source", dir: "asc" }, filters: ["source", "product", "zone"],
       empty: "No capacity price has been measured yet.",
@@ -912,14 +1061,15 @@
         { key: "revisions", label: "Re-pricings", num: true, get: function (g) { return g.last7.revisions; }, html: function (g) { return fmtInt(g.last7.revisions); } },
         { key: "lag", label: "Typically after", csvLabel: "Typically after (h)", num: true, get: function (g) { return g.last7.lag_p50_h; }, html: function (g) { return fmtHours(g.last7.lag_p50_h); } }
       ]
-    }));
+    });
   }
 
   function renderRevisionTable(revs) {
     var change = function (r) { return r.new == null ? null : r.new - r.old; };
     var pct = function (r) { return r.new == null || !r.old ? null : (r.new - r.old) / Math.abs(r.old); };
     var after = function (r) { return (Date.parse(r.revised_at) - Date.parse(r.first_published_at)) / 3600000; };
-    state.tables.push(new DataTable($("rev-table"), {
+    if (state.tables.revisions) { state.tables.revisions.setRows(revs); return; }
+    state.tables.revisions = new DataTable($("rev-table"), {
       id: "revisions", rows: revs, page: 50, csvName: "nordic-balancing-revisions.csv",
       sort: { key: "revised_at", dir: "desc" }, filters: ["source", "data", "zone", "kind"],
       search: "Search zone, source, product…",
@@ -949,7 +1099,7 @@
         { key: "first", label: "First published", time: true, hidden: true, get: function (r) { return r.first_published_at; },
           html: function (r) { return esc(dateTime(r.first_published_at)); } }
       ]
-    }));
+    });
   }
 
   function renderTrend(s) {
@@ -1020,20 +1170,131 @@
         document.querySelectorAll(".tz button").forEach(function (o) {
           o.setAttribute("aria-pressed", String(o === b));
         });
-        if (state.summary) { renderStatus(state.summary); renderHistogram(state.summary, state.revisions); }
-        state.tables.forEach(function (t) { t.render(); });
+        if (state.summary) renderAll();
       });
     });
   }
 
+  /* The zone picker narrows every section to the zones a reader follows. */
+  function bindZonePicker() {
+    var btn = $("zp-btn"), pop = $("zp-pop");
+    var countries = ["DK", "FI", "NO", "SE"];
+    function label() {
+      var n = state.zones ? state.zones.length : 0;
+      var whole = countries.filter(function (c) {
+        return ZONES.filter(function (z) { return z.slice(0, 2) === c; }).every(function (z) { return state.zones && state.zones.indexOf(z) >= 0; });
+      });
+      var covered = whole.length && whole.reduce(function (s, c) {
+        return s + ZONES.filter(function (z) { return z.slice(0, 2) === c; }).length;
+      }, 0) === n;
+      btn.textContent = !state.zones ? "Zones: all" : covered && whole.length <= 2
+        ? "Zones: " + whole.map(function (c) { return COUNTRY[c]; }).join(", ")
+        : n === 1 ? "Zone: " + state.zones[0] : "Zones: " + n;
+      btn.setAttribute("data-active", String(!!state.zones));
+    }
+    function apply(list) {
+      state.zones = list && list.length && list.length < ZONES.length ? list : null;
+      save("nbw.zones", state.zones);
+      label();
+      if (state.summary) renderAll();
+    }
+    function draw() {
+      var sel = state.zones || ZONES;
+      pop.innerHTML = '<div class="pop-title">Show only these zones everywhere on the page</div>' + countries.map(function (c) {
+        var zs = ZONES.filter(function (z) { return z.slice(0, 2) === c; });
+        var on = zs.filter(function (z) { return sel.indexOf(z) >= 0; }).length;
+        return '<fieldset><legend><input type="checkbox" data-country="' + c + '"' + (on === zs.length ? " checked" : "") +
+          (on && on < zs.length ? ' data-mixed="1"' : "") + ' aria-label="All of ' + esc(COUNTRY[c]) + '">' + esc(COUNTRY[c]) + "</legend>" +
+          (zs.length > 1 ? '<div class="zones">' + zs.map(function (z) {
+            return '<label><input type="checkbox" data-zone="' + z + '"' + (sel.indexOf(z) >= 0 ? " checked" : "") + ">" + z + "</label>";
+          }).join("") + "</div>" : "") + "</fieldset>";
+      }).join("") + '<div class="pop-foot"><button type="button" class="btn ghost" data-all>Show all</button>' +
+        '<button type="button" class="btn ghost" data-close>Done</button></div>';
+      pop.querySelectorAll("[data-mixed]").forEach(function (cb) { cb.indeterminate = true; });
+      pop.querySelectorAll("input[data-zone]").forEach(function (cb) {
+        cb.addEventListener("change", function () {
+          var cur = (state.zones || ZONES).slice(), z = cb.getAttribute("data-zone");
+          if (cb.checked && cur.indexOf(z) < 0) cur.push(z);
+          if (!cb.checked) cur = cur.filter(function (x) { return x !== z; });
+          if (!cur.length) { cb.checked = true; return; }
+          apply(ZONES.filter(function (x) { return cur.indexOf(x) >= 0; }));
+          draw();
+          var again = pop.querySelector('input[data-zone="' + z + '"]');
+          if (again) again.focus();
+        });
+      });
+      pop.querySelectorAll("input[data-country]").forEach(function (cb) {
+        cb.addEventListener("change", function () {
+          var c = cb.getAttribute("data-country"), cur = (state.zones || ZONES).slice();
+          var zs = ZONES.filter(function (z) { return z.slice(0, 2) === c; });
+          cur = cb.checked ? uniq(cur.concat(zs)) : cur.filter(function (z) { return zs.indexOf(z) < 0; });
+          if (!cur.length) { cb.checked = true; return; }
+          apply(ZONES.filter(function (x) { return cur.indexOf(x) >= 0; }));
+          draw();
+          var again = pop.querySelector('input[data-country="' + c + '"]');
+          if (again) again.focus();
+        });
+      });
+      pop.querySelector("[data-all]").addEventListener("click", function () { apply(null); draw(); });
+      pop.querySelector("[data-close]").addEventListener("click", function () { close(); btn.focus(); });
+    }
+    function close() { pop.hidden = true; btn.setAttribute("aria-expanded", "false"); }
+    btn.addEventListener("click", function () {
+      if (pop.hidden) { draw(); pop.hidden = false; btn.setAttribute("aria-expanded", "true"); } else close();
+    });
+    document.addEventListener("click", function (e) {
+      if (!pop.hidden && !pop.contains(e.target) && e.target !== btn) close();
+    });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !pop.hidden) { close(); btn.focus(); } });
+    label();
+  }
+
+  function renderCitation(s) {
+    var accessed = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" }).format(new Date());
+    var since = s.collecting_since ? new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })
+      .format(new Date(s.collecting_since)) : "";
+    var text = "Nordic Balancing Watch (" + new Date().getUTCFullYear() + "). Publication times and revisions of " +
+      "Nordic imbalance and reserve capacity prices" + (since ? ", collected since " + since : "") + ". " +
+      location.origin + "/ (accessed " + accessed + ").";
+    $("cite-text").textContent = text;
+    $("cite-copy").onclick = function () {
+      var done = function () { $("cite-msg").textContent = "Copied."; };
+      if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () { $("cite-msg").textContent = "Select the text to copy it."; });
+      else $("cite-msg").textContent = "Select the text to copy it.";
+    };
+  }
+
+  /* The summary and revisions narrowed to the selected zones. */
+  function view() {
+    var s = state.summary, out = {};
+    for (var k in s) out[k] = s[k];
+    out.groups = (s.groups || []).filter(function (g) { return inZones(g.zone); });
+    out.now = (s.now || []).filter(function (e) { return inZones(e.zone); });
+    return { s: out, revs: state.revisions.filter(function (r) { return inZones(r.zone); }) };
+  }
+
   function renderCharts() {
-    var s = state.summary;
-    renderDelay(s);
-    renderShare(s);
-    renderLead(s);
-    renderTrend(s);
-    renderSize(state.revisions);
-    renderHistogram(s, state.revisions);
+    var v = view();
+    renderDelay(v.s);
+    renderShare(v.s);
+    renderLead(v.s);
+    renderTrend(v.s);
+    renderSize(v.revs);
+    renderHistogram(v.s, v.revs);
+  }
+
+  function renderAll() {
+    var v = view();
+    renderStatus(state.summary);
+    renderStats(v.s);
+    renderFindings(v.s, v.revs);
+    renderHowTo(v.s);
+    renderBoard(v.s);
+    renderRecent(v.s, v.revs);
+    renderCharts();
+    renderZonesTable(v.s);
+    renderReserveTable(v.s);
+    renderRevisionTable(v.revs);
   }
 
   /* ---------- boot ---------- */
@@ -1047,7 +1308,13 @@
 
   renderWaitlist();
   renderFooter();
+  renderGlossary();
+  bindTerms(document);
   bindTimeZone();
+  bindZonePicker();
+  document.addEventListener("pointerdown", function (e) {
+    if (!(e.target.closest && e.target.closest(".term, [data-tip]"))) hideTip();
+  });
 
   fetchJson("/data/summary.json").then(function (summary) {
     if (!summary || summary.schema !== 1) throw new Error("unsupported data schema");
@@ -1057,13 +1324,8 @@
     }).catch(function () { return []; }).then(function (revs) {
       state.revisions = revs;
       $("content").hidden = false;
-      renderStatus(summary);
-      renderStats(summary);
-      renderFindings(summary, revs);
-      renderCharts();
-      renderZonesTable(summary);
-      renderReserveTable(summary);
-      renderRevisionTable(revs);
+      renderAll();
+      renderCitation(summary);
       var w = window.innerWidth, t;
       window.addEventListener("resize", function () {
         if (window.innerWidth === w) return;

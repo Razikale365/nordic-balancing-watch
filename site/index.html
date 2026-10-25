@@ -17,15 +17,21 @@
     <div class="wrap">
       <a class="brand" href="#top" aria-label="Nordic Balancing Watch, top of page">
         <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--accent)"/><path d="M7 21h4l3-9 4 13 3-8h4" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Nordic Balancing Watch
+        <span>Nordic Balancing Watch</span>
       </a>
       <nav class="nav" aria-label="Sections">
+        <a href="#now">Right now</a>
         <a href="#imbalance">Imbalance prices</a>
-        <a href="#reserves">Reserve capacity</a>
-        <a href="#revisions">Revision log</a>
-        <a href="#method">Method</a>
+        <a href="#reserves">Reserves</a>
+        <a href="#revisions">Revisions</a>
+        <a href="#data">Data &amp; method</a>
       </nav>
       <span class="spacer"></span>
+      <div class="dt-menu zp">
+        <button type="button" class="btn ghost" id="zp-btn" aria-expanded="false" aria-controls="zp-pop"
+          title="Show only the zones you follow, everywhere on the page">Zones: all</button>
+        <div class="dt-pop" id="zp-pop" hidden></div>
+      </div>
       <div class="tz" role="group" aria-label="Time zone for times on this page">
         <button type="button" data-tz="UTC" aria-pressed="true">UTC</button>
         <button type="button" data-tz="Europe/Stockholm" aria-pressed="false" title="Nordic local time: CET in winter, CEST in summer (Finland is one hour ahead)">Nordic time</button>
@@ -47,9 +53,32 @@
           <p class="eyebrow"><span class="live-dot" id="live-dot" aria-hidden="true"></span>
             <span id="status-line">Live</span></p>
           <h1 id="hero-h">When Nordic balancing prices appear, and how often they change</h1>
-          <p class="lede">The APIs of eSett, ENTSO-E and the Nordic TSOs only return a price as it is
-            now. This site polls them every 15 minutes and keeps every version, so the first
-            publication time and every later revision are on record.</p>
+          <p class="lede">The same electricity prices are published by several organisations, at
+            different times, and are sometimes changed afterwards. Their websites only show the
+            latest number. This site checks them every 15 minutes and keeps every version, so you
+            can see who publishes first and what changed later.</p>
+
+          <div class="explain" aria-label="In plain words">
+            <div>
+              <h2>What is an imbalance price?</h2>
+              <p>Power companies promise in advance how much they will produce or use. Whoever ends up
+                off that plan pays or is paid the <span class="term" data-term="imbalance">imbalance
+                price</span> for each <span class="term" data-term="interval">15 minutes</span>. It is
+                only known after those 15 minutes are over.</p>
+            </div>
+            <div>
+              <h2>Why does the timing matter?</h2>
+              <p>Traders, battery operators and <span class="term" data-term="brp">balance
+                responsible parties</span> act on this price. Knowing where it appears first, and how
+                long it usually takes, tells them when they can rely on it.</p>
+            </div>
+            <div>
+              <h2>Why do later changes matter?</h2>
+              <p>If a published price is changed, anyone who acted on the first number acted on a
+                wrong one. Analyses built on today&rsquo;s final numbers quietly assume they were
+                known sooner, and more accurately, than they were.</p>
+            </div>
+          </div>
 
           <dl class="stats" id="stats"></dl>
 
@@ -59,12 +88,37 @@
           </div>
         </section>
 
+        <section class="section" id="now" aria-labelledby="now-h">
+          <div class="section-head">
+            <span class="kicker">Right now</span>
+            <h2 id="now-h">Latest imbalance price per zone</h2>
+            <p>The newest 15-minute interval each source has a price for, and how long ago that
+              interval ended. Refreshed every 15 minutes.</p>
+          </div>
+          <div class="grid-2 now-grid">
+            <article class="card" aria-labelledby="board-h">
+              <div class="card-head"><h3 id="board-h">Price board</h3>
+                <span class="muted small" id="board-asof"></span></div>
+              <div class="legend" id="board-legend"></div>
+              <div class="table-scroll board-scroll"><table class="board" id="board"></table></div>
+              <p class="note" id="board-note"></p>
+            </article>
+            <article class="card" aria-labelledby="recent-h">
+              <div class="card-head"><h3 id="recent-h">Changed in the last 3 hours</h3></div>
+              <ul class="recent" id="recent"></ul>
+              <p class="note"><a href="#revisions">All revisions</a></p>
+            </article>
+          </div>
+        </section>
+
         <section class="section" id="imbalance" aria-labelledby="imb-h">
           <div class="section-head">
             <span class="kicker">Imbalance prices</span>
             <h2 id="imb-h">Who publishes first, and who revises</h2>
-            <p>Each 15-minute settlement interval gets an imbalance price after it ends. The same
-              price is published by several sources at different times.</p>
+            <p>Every 15 minutes gets its own price, published after those 15 minutes end. The same
+              price appears on <span class="term" data-term="esett">eSett</span>, on
+              <span class="term" data-term="entsoe">ENTSO-E</span> and on the national
+              <span class="term" data-term="tso">TSO</span>&rsquo;s site, each at its own pace.</p>
           </div>
 
           <div class="grid-2">
@@ -72,8 +126,12 @@
               <div class="card-head">
                 <h3 id="delay-h">Minutes until the first price appears</h3>
               </div>
-              <p class="sub">After the interval ends. The marker is the median interval; the line runs
-                to the 95th percentile.</p>
+              <p class="sub">One row per <span class="term" data-term="zone">price zone</span>.
+                Further left means faster. The symbol is a typical day
+                (<span class="term" data-term="median">median</span>); the line runs to how late it
+                gets on a bad day (<span class="term" data-term="p95">95th percentile</span>).
+                Times are accurate to about 15 minutes.</p>
+              <p class="howto" id="delay-howto"></p>
               <div class="legend" id="delay-legend"></div>
               <div class="chart" id="delay-chart" role="img" aria-labelledby="delay-h"></div>
               <p class="callout" id="delay-callout"></p>
@@ -108,8 +166,12 @@
           <div class="section-head">
             <span class="kicker">Reserve capacity</span>
             <h2 id="res-h">Auctioned ahead, then re-priced</h2>
-            <p>Capacity for frequency reserves is bought before delivery, so its price appears hours
-              or days ahead and can change when a later auction clears.</p>
+            <p>Grid operators also pay companies to stand ready to adjust their power at short
+              notice (<span class="term" data-term="reserve">reserve capacity</span>, such as
+              <span class="term" data-term="fcr">FCR</span>, <span class="term" data-term="afrr">aFRR</span>
+              and <span class="term" data-term="mfrr">mFRR</span>). That capacity is bought in
+              <span class="term" data-term="auction">auctions</span> before delivery, so its price
+              appears hours or days ahead, and can change when a later auction clears.</p>
           </div>
 
           <article class="card" aria-labelledby="lead-h">
@@ -134,8 +196,9 @@
           <div class="section-head">
             <span class="kicker">Revision log</span>
             <h2 id="rev-h">Every price change after first publication</h2>
-            <p>The most recent changes from the last 7 days, newest first. A withdrawal is a price
-              that disappeared. Changes made while a row was still being filled in are not listed.</p>
+            <p>The most recent changes from the last 7 days, newest first: what the price was when it
+              was first published, and what it is now. A <span class="term" data-term="withdrawn">withdrawal</span>
+              is a price that disappeared. Gaps filled in before a price was published are not listed.</p>
           </div>
           <article class="card" aria-label="Revision log">
             <div class="card-head"><h3 id="hist-h">Revisions per hour</h3></div>
@@ -159,31 +222,77 @@
         </section>
       </div>
 
-      <section class="section" id="method" aria-labelledby="method-h">
+      <section class="section" id="data" aria-labelledby="data-h">
         <div class="section-head">
-          <span class="kicker">Method</span>
-          <h2 id="method-h">How it is measured</h2>
+          <span class="kicker">Data &amp; method</span>
+          <h2 id="data-h">How it is measured, and how to use the data</h2>
         </div>
         <div class="method">
           <article class="card">
             <h3>First publication</h3>
-            <p>A price counts as published at the first poll that returns it with a value. Rows that
+            <p>A price counts as published at the first check that returns it with a value. Rows that
               appear without a price are not yet published.</p>
-            <p>Imbalance prices are polled every 15 minutes, reserve capacity hourly, so times are
-              accurate to about one poll.</p>
+            <p>Imbalance prices are checked every 15 minutes and reserve capacity every hour, so a
+              publication time is accurate to within one check.</p>
           </article>
           <article class="card">
             <h3>What is not counted</h3>
-            <p>Values already on record when collection started, or that first appeared after a
-              collector outage, have no reliable publication time. They are left out of delays and
-              of the share revised.</p>
+            <p>Values already on record when collection started, or first seen after a collector
+              outage, have no reliable publication time. They are left out of the delays and of the
+              share changed.</p>
+            <p>Statistics cover the last 7 days; the daily view covers closed UTC days.</p>
           </article>
           <article class="card">
             <h3>Revisions</h3>
-            <p>Any change to a published value is a revision, and so is a value that disappears. The
-              log keeps the previous and the new price. Nothing is smoothed or corrected.</p>
+            <p>Any change to a published value is a revision, and so is a value that disappears.
+              The log keeps the earlier and the new price. Nothing is smoothed or corrected, and a
+              0.00 is shown as published.</p>
           </article>
         </div>
+
+        <div class="grid-2 data-grid">
+          <article class="card" aria-labelledby="dict-h">
+            <h3 id="dict-h">Files and fields</h3>
+            <p class="sub">The page reads two JSON files, refreshed every 15 minutes. Use them
+              directly, or download any table above as CSV.</p>
+            <p class="downloads">
+              <a class="btn" href="/data/summary.json" download>summary.json</a>
+              <a class="btn" href="/data/revisions.json" download>revisions.json</a>
+            </p>
+            <div class="table-scroll dict">
+              <table>
+                <thead><tr><th scope="col"><span class="th-pad">Field</span></th><th scope="col"><span class="th-pad">Meaning</span></th></tr></thead>
+                <tbody>
+                  <tr><td><code>groups[].last7.p50</code>, <code>p95</code></td><td>Minutes from the end of the interval to the first price (negative: before delivery), median and 95th percentile</td></tr>
+                  <tr><td><code>last7.n</code>, <code>excluded</code></td><td>Intervals measured, and first sightings left out (no reliable publication time)</td></tr>
+                  <tr><td><code>last7.published</code>, <code>revised</code>, <code>revised_share</code></td><td>Measured prices, how many changed later, and the share</td></tr>
+                  <tr><td><code>last7.revisions</code>, <code>withdrawn</code>, <code>lag_p50_h</code></td><td>Changes in the period, of which withdrawals, and the median hours from first price to change</td></tr>
+                  <tr><td><code>groups[].daily[]</code></td><td>The same figures per closed UTC day, up to 30 days</td></tr>
+                  <tr><td><code>now[]</code></td><td>Latest priced interval per source and zone, with price and minutes since it ended</td></tr>
+                  <tr><td><code>revisions[]</code></td><td>One change: interval, field and unit, old and new value, first published and revised times (UTC)</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="card" aria-labelledby="cite-h">
+            <h3 id="cite-h">Citing and the full record</h3>
+            <p class="sub">Every version seen since collection started is kept, not only the last
+              7 days. A versioned public archive with a DOI is planned; until then, please cite:</p>
+            <pre class="cite" id="cite-text"></pre>
+            <p class="downloads"><button type="button" class="btn" id="cite-copy">Copy citation</button>
+              <span class="muted small" id="cite-msg" role="status"></span></p>
+            <p class="sub">Sources, polling and the publication-time rule are the open-source
+              <a href="https://github.com/Razikale365/nordic-balancing" rel="noopener">nordic-balancing</a>
+              library plus the rules on this page. For the full history, join the waitlist below
+              and say you are a researcher.</p>
+          </article>
+        </div>
+
+        <article class="card" aria-labelledby="glossary-h">
+          <h3 id="glossary-h">Glossary</h3>
+          <dl class="glossary" id="glossary"></dl>
+        </article>
       </section>
 
       <section class="section" id="waitlist-section" aria-labelledby="wl-h">
