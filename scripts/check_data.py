@@ -137,6 +137,33 @@ def check_summary(data, errors):
                     errors.append(f"{w}: {k} must be a number or null")
     if keys != sorted(keys):
         errors.append(f"{name}: groups must be sorted by source, data, zone")
+    check_now(data.get("now"), errors)
+
+
+def check_now(now, errors):
+    """Optional latest price per source and zone."""
+    if now is None:
+        return
+    name = "summary.json: now"
+    if not isinstance(now, list):
+        errors.append(f"{name} must be a list")
+        return
+    for i, e in enumerate(now):
+        where = f"{name}[{i}]"
+        if not isinstance(e, dict):
+            errors.append(f"{where}: must be an object")
+            continue
+        if e.get("source") not in SOURCES:
+            errors.append(f"{where}: unknown source {e.get('source')!r}")
+        if not is_str(e.get("zone")) or not is_str(e.get("unit")):
+            errors.append(f"{where}: zone and unit must be non-empty strings")
+        if not is_ts(e.get("interval_start")):
+            errors.append(f"{where}: interval_start must be an ISO timestamp ending in Z")
+        if e.get("published_at") is not None and not is_ts(e.get("published_at")):
+            errors.append(f"{where}: published_at must be an ISO timestamp or null")
+        for k in ("price", "minutes_since_end"):
+            if not is_num(e.get(k)):
+                errors.append(f"{where}: {k} must be a number")
 
 
 def check_revisions(data, errors):

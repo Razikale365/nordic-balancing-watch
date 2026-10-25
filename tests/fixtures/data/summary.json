@@ -101,5 +101,11 @@
         {"day": "2026-10-23", "n": 24, "p50": -2765.0, "p95": -1385.0, "published": 24, "revised": 23, "revisions": 23}
       ]
     }
+  ],
+  "now": [
+    {"source": "entsoe", "zone": "SE3", "interval_start": "2026-10-24T09:15:00Z", "price": 48.12,
+     "unit": "EUR/MWh", "published_at": "2026-10-24T09:45:03Z", "minutes_since_end": 25.0},
+    {"source": "esett", "zone": "SE3", "interval_start": "2026-10-24T08:45:00Z", "price": 47.9,
+     "unit": "EUR/MWh", "published_at": "2026-10-24T09:45:02Z", "minutes_since_end": 55.0}
   ]
 }

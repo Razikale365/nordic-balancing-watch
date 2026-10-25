@@ -52,6 +52,14 @@ def test_bad_timestamp_fails(tmp_path):
     assert "generated_at" in res.stderr
 
 
+def test_bad_latest_price_fails(tmp_path):
+    def breakit(s):
+        s["now"][0]["price"] = "48.12"
+    res = run_check(make_dir(tmp_path, summary=breakit))
+    assert res.returncode != 0
+    assert "now[0]: price" in res.stderr
+
+
 def test_missing_required_key_fails(tmp_path):
     def breakit(r):
         del r["revisions"][0]["revised_at"]
