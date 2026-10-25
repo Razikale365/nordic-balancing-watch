@@ -86,15 +86,16 @@
             <div>
               <h2>Why do later changes matter?</h2>
               <p>If a published price is changed, anyone who acted on the first number acted on a
-                wrong one. Analyses built on today&rsquo;s final numbers quietly assume they were
+                different number from the final one. Analyses built on today&rsquo;s final numbers quietly assume they were
                 known sooner, and more accurately, than they were.</p>
             </div>
           </div>
 
+          <p class="sample-note" id="sample-note" role="note"></p>
           <dl class="stats" id="stats"></dl>
 
           <div class="findings" aria-labelledby="findings-h">
-            <h2 id="findings-h">What the data shows, last 7 days</h2>
+            <h2 id="findings-h">What the data shows, <span data-window>last 7 days</span></h2>
             <ol id="findings"></ol>
           </div>
         </section>
@@ -152,13 +153,14 @@
               <div class="card-head">
                 <h3 id="share-h">Share of first prices changed later</h3>
               </div>
-              <p class="sub">Prices first seen in the last 7 days that were changed or withdrawn
+              <p class="sub">Prices first seen in the <span data-window>last 7 days</span> that were changed or withdrawn
                 afterwards.</p>
               <div class="chart" id="share-chart" role="img" aria-labelledby="share-h"></div>
               <p class="note" id="share-note"></p>
               <h4 class="minor" id="size-h">What the changes were</h4>
-              <p class="sub">Imbalance price changes logged in the last 7 days, and how many replaced a
-                first price of exactly 0.00.</p>
+              <p class="sub">Imbalance price changes logged in the <span data-window>last 7 days</span>, and how many replaced a
+                value of exactly 0.00.</p>
+              <p class="note" data-revcap></p>
               <div class="chart" id="size-chart" role="img" aria-labelledby="size-h"></div>
             </article>
           </div>
@@ -189,7 +191,7 @@
             <div class="card-head">
               <h3 id="lead-h">Hours before delivery the first price appears</h3>
             </div>
-            <p class="sub">Median over the delivery hours of the last 7 days.</p>
+            <p class="sub">Median over the delivery hours of the <span data-window>last 7 days</span>.</p>
             <div class="chart" id="lead-chart" role="img" aria-labelledby="lead-h"></div>
             <p class="callout" id="lead-callout"></p>
             <p class="note" id="lead-pending"></p>
@@ -206,9 +208,9 @@
         <section class="section" id="revisions" aria-labelledby="rev-h">
           <div class="section-head">
             <span class="kicker">Revision log</span>
-            <h2 id="rev-h">Every price change after first publication</h2>
-            <p>The most recent changes from the last 7 days, newest first: what the price was when it
-              was first published, and what it is now. A <span class="term" data-term="withdrawn">withdrawal</span>
+            <h2 id="rev-h">Price changes after a price was first seen</h2>
+            <p>The most recent changes from the <span data-window>last 7 days</span>, newest first: the price just before each
+              change and the price it changed to. An interval revised twice appears twice. A <span class="term" data-term="withdrawn">withdrawal</span>
               is a price that disappeared. Gaps filled in before a price was published are not listed.</p>
           </div>
           <article class="card" aria-label="Revision log">
@@ -217,6 +219,7 @@
               reserve re-pricings does not hide the hourly pattern.</p>
             <div class="legend" id="hist-legend"></div>
             <div class="chart" id="hist-chart" role="img" aria-labelledby="hist-h"></div>
+            <p class="note" data-revcap></p>
             <div id="rev-table"></div>
           </article>
         </section>
@@ -241,8 +244,9 @@
         <div class="method">
           <article class="card">
             <h3>First publication</h3>
-            <p>A price counts as published at the first check that returns it with a value. Rows that
-              appear without a price are not yet published.</p>
+            <p>A price counts as published at the first check that returns it with a value. That is
+              when the collector first saw it, not necessarily the moment the provider published it.
+              Rows that appear without a price are not yet published.</p>
             <p>Imbalance prices are checked every 15 minutes and reserve capacity every hour, so a
               publication time is accurate to within one check.</p>
           </article>
@@ -251,7 +255,8 @@
             <p>Values already on record when collection started, or first seen after a collector
               outage, have no reliable publication time. They are left out of the delays and of the
               share changed.</p>
-            <p>Statistics cover the last 7 days; the daily view covers closed UTC days.</p>
+            <p>Statistics use a rolling 7-day window; the daily view covers closed UTC days.</p>
+            <p id="coverage-note"></p>
           </article>
           <article class="card">
             <h3>Revisions</h3>

@@ -27,7 +27,7 @@
     tso: ["TSO (national grid operator)", "Energinet in Denmark, Fingrid in Finland, Statnett in Norway and Svenska kraftnät in Sweden. Energinet and Fingrid publish imbalance prices on their own open-data sites."],
     brp: ["Balance responsible party", "A company that has taken on the financial responsibility for a group of producers or consumers being in balance. It pays or receives the imbalance price."],
     median: ["Median", "The middle value: half of the intervals were faster, half slower. A good picture of a typical day."],
-    p95: ["95th percentile", "95 out of 100 intervals were published by this time; only 1 in 20 took longer. A picture of a bad day."],
+    p95: ["95th percentile", "95 out of 100 intervals were first seen by this time; only 1 in 20 took longer. A picture of a bad day."],
     revision: ["Revision", "Any change to a price after it was first published."],
     withdrawn: ["Withdrawal", "A price that was published and later disappeared from the source."],
     reserve: ["Reserve capacity", "Payment for being ready to raise or lower power at short notice. The grid operator buys it ahead of time and calls on it when needed."],
@@ -37,7 +37,7 @@
     auction: ["D-2 and D-1 auctions", "Reserve capacity is bought two days (D-2) and one day (D-1) before delivery. A price published after the first auction can change when the next one clears."]
   };
 
-  var state = { tz: load("nbw.tz", "UTC"), zones: load("nbw.zones", null), summary: null, revisions: [], tables: {} };
+  var state = { tz: load("nbw.tz", "UTC"), zones: load("nbw.zones", null), summary: null, revisions: [], tables: {}, cov: { label: "last 7 days" } };
   function inZones(z) { return !state.zones || state.zones.indexOf(z) >= 0; }
   function term(key, text) { return '<span class="term" data-term="' + key + '">' + text + "</span>"; }
 
@@ -111,6 +111,8 @@
   function dateTime(iso) {
     return fmtTime(iso, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   }
+  /* A timestamp that matches the contract's pattern can still be an impossible date. */
+  function validTime(iso) { return iso && !isNaN(Date.parse(iso)) ? iso : null; }
   function longDate(iso) { return fmtTime(iso, { day: "numeric", month: "short", year: "numeric" }); }
   function relTime(iso) {
     var s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
@@ -661,6 +663,8 @@
   DataTable.prototype.csv = function () {
     var cols = this.visible(), rows = this.view();
     var cellOf = function (v) {
+      /* Derived numbers (hours, shares) carry float noise such as 25.334999999999997. */
+      if (typeof v === "number" && isFinite(v) && v !== Math.round(v)) v = Number(v.toFixed(6));
       var s = v == null ? "" : String(v);
       return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     };
@@ -697,6 +701,51 @@
 
   /* ---------- sections ---------- */
 
+  /* The statistics use a rolling 7-day window. Until 7 days have been collected the window
+     holds less than that, so the copy names the history the figures actually rest on. */
+  function coverage(s) {
+    var since = s.collecting_since ? Date.parse(s.collecting_since) : NaN;
+    var hours = (Date.parse(s.generated_at) - since) / 3600000;
+    if (isNaN(hours)) return { hours: null, full: false, span: null, since: null, label: "data collected so far" };
+    hours = Math.max(0, hours);
+    var h = Math.round(hours);
+    var span = hours < 1 ? "less than an hour" : hours < 48 ? h + (h === 1 ? " hour" : " hours")
+      : (hours / 24).toFixed(1).replace(/\.0$/, "") + " days";
+    var full = hours >= 168;
+    return { hours: hours, full: full, span: span, since: s.collecting_since,
+      label: full ? "last 7 days" : hours < 1 ? "first hour of collection" : "first " + span + " of collection" };
+  }
+
+  function renderCoverage(s, v) {
+    var c = state.cov = coverage(s);
+    document.querySelectorAll("[data-window]").forEach(function (el) { el.textContent = c.label; });
+    var imb = imbalanceGroups(v);
+    var pub = sum(imb.map(function (g) { return g.last7.published || 0; }));
+    var sample = pub ? fmtInt(pub) + " imbalance prices first seen in " + imb.length + " zone and source series" : "";
+    var since = c.since ? longDate(c.since) + ", " +
+      fmtTime(c.since, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) + " " + tzName(c.since) : "";
+    var seen = " Times are when the collector first saw each price, checking imbalance prices every 15 minutes and reserve prices every hour.";
+    $("sample-note").innerHTML = c.full
+      ? "Figures use the last 7 days of data" + (sample ? " (" + sample + ")" : "") + "." + seen
+      : !c.since
+        ? "<b>Early observations, not established patterns.</b> The data does not say when collection started, so how much history the figures rest on is unknown" +
+          (sample ? " (" + sample + ")" : "") + "." + seen
+        : "<b>Early observations, not established patterns.</b> Collection started on " + esc(since) + ", so the figures below rest on only " +
+          c.span + " of data" + (sample ? " (" + sample + ")" : "") + ", not a full 7-day window." + seen;
+    /* revisions.json keeps only the newest entries (the collector caps it at 500), so the log
+       and the charts built from it can cover less than the window the summary counts. */
+    var logged = state.revisions.length, counted = sum((s.groups || []).map(function (g) { return (g.last7 && g.last7.revisions) || 0; }));
+    var oldest = logged ? state.revisions.reduce(function (m, r) { return r.revised_at < m ? r.revised_at : m; }, state.revisions[0].revised_at) : null;
+    var capped = logged >= 500 && oldest;
+    document.querySelectorAll("[data-revcap]").forEach(function (el) {
+      el.textContent = capped ? "The log keeps only the newest " + fmtInt(logged) + " entries, back to " + dateTime(oldest) + " " + tzName(oldest) +
+        ", while " + fmtInt(counted) + " changes were counted in the window. The revision log, its CSV and the charts built from it cover only those entries." : "";
+    });
+    $("coverage-note").textContent = !c.since ? "The data does not say when collection started, so how much of the window is filled is unknown."
+      : c.full ? "Collection started on " + since + "; the 7-day window is full."
+      : "Collection started on " + since + ". The current data covers " + c.span + ", so the 7-day window is not yet full and every figure on this page comes from that shorter sample.";
+  }
+
   function renderStatus(s) {
     var age = Date.now() - Date.parse(s.generated_at), stale = age > STALE_MS;
     $("live-dot").classList.toggle("stale", stale);
@@ -704,7 +753,7 @@
       '<time datetime="' + esc(s.generated_at) + '">' +
       esc(fmtTime(s.generated_at, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) + " " + tzName(s.generated_at)) +
       "</time> (" + esc(relTime(s.generated_at)) + ")" +
-      (s.collecting_since ? " · collecting since " + esc(longDate(s.collecting_since)) : "");
+      (validTime(s.collecting_since) ? " · collecting since " + esc(longDate(s.collecting_since)) : "");
     var b = $("stale-banner");
     if (stale) {
       b.firstChild.textContent = "This data was generated " + relTime(s.generated_at) +
@@ -728,13 +777,13 @@
       var bar = '<span class="tile-bar" aria-hidden="true">' + CAT_ORDER.filter(function (c) { return wins[c]; }).map(function (c) {
         return '<i style="flex:' + wins[c] + ";background:" + catColor(c) + '" title="' + esc(CAT_LABEL[c]) + " first in " + wins[c] + '"></i>';
       }).join("") + "</span>";
-      tiles.push(["First price is out after", fmtMin(median(zones.map(function (z) { return fastest[z].last7.p50; }))),
+      tiles.push(["First price seen after", fmtMin(median(zones.map(function (z) { return fastest[z].last7.p50; }))),
         "Median zone · " + CAT_LABEL[lead] + " first in " + wins[lead] + " of " + zones.length, bar]);
     }
     var es = (byCat.esett || []).map(function (g) { return g.last7.p50; }).filter(function (v) { return v != null; });
     if (es.length) {
       var lo = Math.round(Math.min.apply(null, es)), hi = Math.round(Math.max.apply(null, es));
-      tiles.push(["eSett publishes after", (lo === hi ? lo : lo + "–" + hi) + "<small>min</small>", "Typical, depending on the zone"]);
+      tiles.push(["eSett prices seen after", (lo === hi ? lo : lo + "–" + hi) + "<small>min</small>", "Typical, depending on the zone"]);
     }
     var pub = sum(imb.map(function (g) { return g.last7.published || 0; }));
     var rev = sum(imb.map(function (g) { return g.last7.revised || 0; }));
@@ -745,7 +794,8 @@
     var revisions = sum((s.groups || []).map(function (g) { return (g.last7 && g.last7.revisions) || 0; }));
     var p = s.polls_24h || {}, total = (p.ok || 0) + (p.skipped || 0) + (p.error || 0);
     var health = total ? (p.ok / total >= 0.98 ? "up" : p.ok / total >= 0.9 ? "amber" : "down") : "";
-    tiles.push(["Price changes logged", fmtInt(revisions), "Last 7 days" + (total ? " · " + fmtPct(p.ok / total) + " of checks OK" : ""),
+    var win = state.cov.label.charAt(0).toUpperCase() + state.cov.label.slice(1);
+    tiles.push(["Price changes logged", fmtInt(revisions), win + (total ? " · " + fmtPct(p.ok / total) + " of checks OK in the last 24 h" : ""),
       health ? '<span class="tile-health"><span class="dot ' + health + '"></span>Collector ' +
         (health === "up" ? "healthy" : health === "amber" ? "partly failing" : "failing") + "</span>" : ""]);
     $("stats").innerHTML = tiles.map(function (t) {
@@ -782,7 +832,7 @@
       }).map(function (c) { return CAT_LABEL[c]; });
       var share = top.last7.revised_share;
       var plain = "About " + simpleFraction(share);
-      out.push("<b>" + plain + "</b> (" + fmtPct(share) + ") of the first prices " + esc(SRC_LABEL[top.source]) + " showed for <b>" +
+      out.push("<b>" + plain + "</b> (" + fmtPct(share) + ", " + fmtInt(top.last7.revised) + " of " + fmtInt(top.last7.published) + ") of the first prices " + esc(SRC_LABEL[top.source]) + " showed for <b>" +
         esc(country(top.zone)) + (country(top.zone) !== top.zone ? " (" + esc(top.zone) + ")" : "") + "</b> were changed later" +
         (top.last7.lag_p50_h != null ? ", typically <b>" + fmtHours(top.last7.lag_p50_h) + "</b> after" : "") + "." +
         (clean.length ? " " + esc(clean.join(" and ")) + " did not change any." : ""));
@@ -791,10 +841,9 @@
     var esRevs = revs.filter(function (r) { return r.source === "esett" && r.data === "imbalance"; });
     if (zeros.length >= 3) {
       var zz = zoneRange(zeros.map(function (r) { return r.zone; }));
-      var lead0 = zeros.length === esRevs.length ? "None of those changes corrected a real price"
-        : zeros.length * 2 > esRevs.length ? "Most of those changes did not correct a real price" : "Some of those changes did not correct a real price";
-      out.push(lead0 + ": eSett first showed <b>0.00</b> and replaced it with the actual price later (" +
-        fmtInt(zeros.length) + " of " + fmtInt(esRevs.length) + " changes, " + esc(zz) + ").");
+      var lead0 = zeros.length === esRevs.length ? "In all of the changes to eSett prices" : zeros.length * 2 > esRevs.length ? "In most of the changes to eSett prices" : "In some of the changes to eSett prices";
+      out.push(lead0 + ", the value replaced was <b>0.00</b> (" +
+        fmtInt(zeros.length) + " of " + fmtInt(esRevs.length) + " changes in the log, " + esc(zz) + ").");
     }
     var res = reserveGroups(s).filter(function (g) { return g.last7.revisions > 0; });
     if (res.length) {
@@ -838,12 +887,6 @@
 
   /* ---------- right now ---------- */
 
-  function trimZeros(values) {
-    var v = (values || []).slice();
-    while (v.length && v[v.length - 1] === 0) v.pop();
-    return v;
-  }
-
   function renderBoard(s) {
     var now = (s.now || []).filter(function (e) { return inZones(e.zone); });
     var table = $("board");
@@ -873,10 +916,7 @@
         var late = limit != null && e.minutes_since_end > limit + 30;
         var isNewest = entries.length > 1 && e === newest && entries.filter(function (x) { return x.interval_start === e.interval_start; }).length === 1;
         return '<td><div class="px-line"><span class="px">' + fmtPrice(e.price) + (zero ? "*" : "") + "</span>" +
-          /* eSett's 0.00 is a placeholder, not a price move: no change pill, and the line stops
-             at the last real price. */
-          (zero || (e.source === "esett" && e.prev_price === 0) ? "" : chg(e.prev_price, e.price)) + "</div>" +
-          sparkline(zero ? trimZeros(e.recent) : e.recent) +
+          chg(e.prev_price, e.price) + "</div>" + sparkline(e.recent) +
           '<span class="px-sub">For ' + esc(fmtTime(e.interval_start, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })) +
           " · " + esc(fmtDur(e.minutes_since_end)) + " ago" + (cat(e.source) === "tso" ? " · " + esc(SRC_LABEL[e.source]) : "") + "</span>" +
           (isNewest ? '<span class="badge newest">Newest</span> ' : "") +
@@ -885,7 +925,7 @@
     }).join("");
     table.innerHTML = head + "<tbody>" + body + "</tbody>";
     $("board-legend").innerHTML = "";
-    $("board-note").textContent = (zeroSeen ? "* eSett often shows 0.00 first and replaces it with the real price later. " : "") +
+    $("board-note").textContent = (zeroSeen ? "* In this data, eSett values of 0.00 have often been replaced by a different value later. " : "") +
       "The change is against the interval before; the line shows up to the last 4 hours. " +
       "Times are when each 15-minute interval started, and how long ago it ended. " +
       "“Later than usual” means the newest price is more than 30 minutes older than this source’s 95th percentile.";
@@ -910,7 +950,7 @@
     var imb = imbalanceGroups(s);
     var zones = uniq(imb.map(function (g) { return g.zone; })).sort(function (a, b) { return zoneIndex(a) - zoneIndex(b); });
     var cats = CAT_ORDER.filter(function (c) { return imb.some(function (g) { return cat(g.source) === c; }); });
-    legend($("delay-legend"), cats, '<span><svg width="24" height="10" aria-hidden="true"><line x1="2" x2="20" y1="5" y2="5" stroke="var(--muted)" stroke-width="2" stroke-linecap="round"/><line x1="20" x2="20" y1="1" y2="9" stroke="var(--muted)" stroke-width="2" stroke-linecap="round"/></svg>95% published by</span>');
+    legend($("delay-legend"), cats, '<span><svg width="24" height="10" aria-hidden="true"><line x1="2" x2="20" y1="5" y2="5" stroke="var(--muted)" stroke-width="2" stroke-linecap="round"/><line x1="20" x2="20" y1="1" y2="9" stroke="var(--muted)" stroke-width="2" stroke-linecap="round"/></svg>95% seen by</span>');
     var rows = zones.map(function (z) {
       var gs = imb.filter(function (g) { return g.zone === z; })
         .sort(function (a, b) { return CAT_ORDER.indexOf(cat(a.source)) - CAT_ORDER.indexOf(cat(b.source)); });
@@ -952,7 +992,7 @@
     }), {
       tick: function (t) { return Math.round(t * 100) + "%"; },
       step: function (m) { return m > 0.5 ? 0.25 : m > 0.2 ? 0.1 : 0.05; },
-      empty: "No first price was changed in the last 7 days."
+      empty: "No first price was changed in the " + state.cov.label + "."
     });
     var zero = imb.filter(function (g) { return !g.last7.revised; });
     var bySrc = {};
@@ -982,7 +1022,7 @@
         aria: SRC_LABEL[src] + " " + zone + ": " + b.n + " changes, " + b.zero + " replaced 0.00",
         tip: '<div class="t-title">' + esc(SRC_LABEL[src]) + " · " + esc(zone) + "</div>" +
           tipRow(cat(src), "Replaced a 0.00 price", fmtInt(b.zero)) +
-          tipRow(cat(src), "Corrected a price", fmtInt(corrected)) +
+          tipRow(cat(src), "Changed a non-zero price", fmtInt(corrected)) +
           (b.withdrawn ? tipRow(cat(src), "Withdrawn", fmtInt(b.withdrawn)) : "") +
           (b.sizes.length ? '<div class="t-sub">Median correction ' + fmtPrice(median(b.sizes)) + " EUR/MWh</div>" : "")
       };
@@ -995,7 +1035,7 @@
 
   function renderHistogram(s, revs) {
     var el = $("hist-chart");
-    if (!revs.length) { el.innerHTML = '<p class="empty-chart">No revision has been recorded in the last 7 days.</p>'; return; }
+    if (!revs.length) { el.innerHTML = '<p class="empty-chart">No revision has been recorded in the ' + esc(state.cov.label) + '.</p>'; return; }
     var HOUR = 3600000;
     var first = Math.floor(Math.min.apply(null, revs.map(function (r) { return Date.parse(r.revised_at); })) / HOUR) * HOUR;
     var last = Math.floor(Date.parse(s.generated_at) / HOUR) * HOUR;
@@ -1104,7 +1144,7 @@
       if (!(g.last7.n > 0) && !(g.last7.revisions > 0)) pending[SRC_LABEL[g.source] + " " + g.data.split(" ")[0]] = true;
     });
     var names = Object.keys(pending).sort();
-    $("lead-pending").textContent = names.length ? "Not measured yet in the last 7 days: " + names.join(", ") + "." : "";
+    $("lead-pending").textContent = names.length ? "Not measured yet in the " + state.cov.label + ": " + names.join(", ") + "." : "";
   }
 
   function renderReserveTable(s) {
@@ -1136,7 +1176,7 @@
       id: "revisions", rows: revs, page: 50, csvName: "nordic-balancing-revisions.csv",
       sort: { key: "revised_at", dir: "desc" }, filters: ["source", "data", "zone", "kind"],
       search: "Search zone, source, product…",
-      empty: revs.length ? "No revision matches these filters." : "No revision has been recorded in the last 7 days.",
+      empty: revs.length ? "No revision matches these filters." : "No revision has been recorded in the " + state.cov.label + ".",
       columns: [
         { key: "revised_at", label: "Revised at", time: true, get: function (r) { return r.revised_at; },
           text: function (r) { return dateTime(r.revised_at); },
@@ -1147,8 +1187,8 @@
         { key: "interval", label: "Delivery interval", time: true, get: function (r) { return r.interval_start; },
           text: function (r) { return dateTime(r.interval_start); },
           html: function (r) { return esc(dateTime(r.interval_start)) + ' <span class="muted">· ' + esc(r.interval_minutes) + " min</span>"; } },
-        { key: "old", label: "First price", num: true, get: function (r) { return r.old; }, html: function (r) { return fmtPrice(r.old); } },
-        { key: "new", label: "Now", num: true, get: function (r) { return r.new; },
+        { key: "old", label: "Price before", num: true, get: function (r) { return r.old; }, html: function (r) { return fmtPrice(r.old); } },
+        { key: "new", label: "Price after", num: true, get: function (r) { return r.new; },
           html: function (r) { return r.new == null ? '<span class="tag withdrawn">Withdrawn</span>' : "<b>" + fmtPrice(r.new) + "</b>"; } },
         { key: "unit", label: "Unit", get: function (r) { return r.unit; }, html: function (r) { return '<span class="muted">' + esc(r.unit) + "</span>"; } },
         { key: "change", label: "Change", num: true, get: change,
@@ -1335,7 +1375,7 @@
 
   function renderCitation(s) {
     var accessed = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" }).format(new Date());
-    var since = s.collecting_since ? new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })
+    var since = validTime(s.collecting_since) ? new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })
       .format(new Date(s.collecting_since)) : "";
     var text = "Nordic Balancing Watch (" + new Date().getUTCFullYear() + "). Publication times and revisions of " +
       "Nordic imbalance and reserve capacity prices" + (since ? ", collected since " + since : "") + ". " +
@@ -1370,6 +1410,7 @@
   function renderAll() {
     var v = view();
     renderStatus(state.summary);
+    renderCoverage(state.summary, v.s);
     renderStats(v.s);
     renderFindings(v.s, v.revs);
     renderHowTo(v.s);

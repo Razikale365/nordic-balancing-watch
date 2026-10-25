@@ -169,6 +169,13 @@ code { font-family: var(--mono); font-size: 0.9em; }
 .hero h1 { font-size: clamp(28px, 4vw, 40px); font-weight: 700; }
 .hero .lede { font-size: 17px; color: var(--ink-2); }
 
+.sample-note {
+  margin-top: 24px; padding: 10px 14px; border-left: 3px solid var(--amber); background: var(--warn-bg);
+  border-radius: 0 8px 8px 0; font-size: 14px; color: var(--ink); max-width: 90ch;
+}
+.sample-note:empty { display: none; }
+.sample-note b { font-weight: 650; }
+.sample-note + .stats { margin-top: 12px; }
 .stats {
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 28px;
 }

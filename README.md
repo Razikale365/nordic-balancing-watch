@@ -1,26 +1,29 @@
 # Nordic Balancing Watch
 
-A small static site that shows when Nordic balancing prices are first published and how
-often they are revised afterwards. Nordic price APIs only expose the current value — when a
+A small static site that shows when Nordic balancing prices first become available and how
+they change afterwards. Nordic price APIs only expose the current value — when a
 price is revised, the earlier value is gone — so a collector polls the sources and keeps every
 version it sees.
 
-Live site: _URL to be added once the Cloudflare Pages project exists._
+Live site: https://nordic-balancing-watch.pages.dev/
 
-One observation from the first days of data: ENTSO-E has the first imbalance price in most
-Nordic zones, 15-45 minutes after the interval ends, while eSett publishes the same prices 20-80
-minutes later. For Denmark and Finland eSett often first publishes 0.00 and replaces it with the
-real price one to two hours later.
+Collection started on 24 October 2026, so the history is still short and the findings are
+early observations from that sample, not established market patterns. In the first days the
+same imbalance price usually appeared on one source well before another, and some first values
+were replaced later. The site computes every figure from the current data and states how much
+history it rests on.
 
 ## What the site shows
 
-- Headline figures and a short list of findings, computed from the current data.
+- Headline figures and a short list of findings, computed from the current data, with the
+  amount of collected history they are based on.
 - Imbalance prices: minutes from the end of each interval until the first price appears, per
   zone and source (median and 95th percentile), the share of first prices changed later, and
   what those changes were.
 - Reserve capacity: how many hours before delivery each product's price appears, and how often
   it is re-priced.
-- Revision log: an hourly timeline and a table of every recorded price change.
+- Revision log: an hourly timeline and a table of the most recent recorded price changes (the
+  data file keeps the newest 500).
 - Every table can be searched, filtered, sorted, reordered, trimmed to chosen columns and
   downloaded as CSV. Times can be shown in UTC or Nordic time.
 - A waitlist form ("get revision alerts and API access") backed by a Cloudflare D1 table
