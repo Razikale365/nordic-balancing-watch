@@ -153,6 +153,36 @@
     }
     return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + fill + '"' + stroke + "/>";
   }
+  /* Price change, finance style: green up, red down, with the relative change when the
+     base is large enough for a percentage to mean something. */
+  function chg(from, to, opts) {
+    if (from == null || to == null) return "";
+    var d = to - from, dir = d > 0 ? "up" : d < 0 ? "down" : "flat";
+    var p = Math.abs(from) >= 1 ? d / Math.abs(from) : null;
+    var arrow = { up: "▲", down: "▼", flat: "" }[dir];
+    var text = dir === "flat" ? "0.00" : (d > 0 ? "+" : "−") + fmtPrice(Math.abs(d));
+    return '<span class="chg ' + dir + (opts && opts.plain ? " plain" : "") + '">' + arrow + (arrow ? " " : "") + text +
+      (p != null && dir !== "flat" ? '<span class="pc">' + (p > 0 ? "+" : "−") + Math.abs(p * 100).toFixed(Math.abs(p) < 0.1 ? 1 : 0) + "%</span>" : "") +
+      "</span>";
+  }
+  function sparkline(values) {
+    var v = (values || []).filter(function (x) { return x != null; });
+    if (v.length < 2) return "";
+    var w = 96, h = 26, pad = 3;
+    var lo = Math.min.apply(null, v), hi = Math.max.apply(null, v), span = hi - lo || 1;
+    var pts = v.map(function (x, i) {
+      return [pad + i * (w - 2 * pad) / (v.length - 1), pad + (hi - x) * (h - 2 * pad) / span];
+    });
+    var last = v[v.length - 1], dir = last > v[0] ? "up" : last < v[0] ? "down" : "flat";
+    var color = { up: "var(--up)", down: "var(--down)", flat: "var(--muted)" }[dir];
+    var line = pts.map(function (p) { return p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" ");
+    var end = pts[pts.length - 1];
+    var zero = lo < 0 && hi > 0 ? '<line x1="' + pad + '" x2="' + (w - pad) + '" y1="' + (pad + hi * (h - 2 * pad) / span).toFixed(1) +
+      '" y2="' + (pad + hi * (h - 2 * pad) / span).toFixed(1) + '" stroke="var(--axis)" stroke-dasharray="2 2"/>' : "";
+    return '<svg class="spark" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + " " + h + '" aria-hidden="true">' + zero +
+      '<polyline points="' + line + '" fill="none" stroke="' + color + '" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>' +
+      '<circle cx="' + end[0].toFixed(1) + '" cy="' + end[1].toFixed(1) + '" r="2.4" fill="' + color + '"/></svg>';
+  }
   function swatch(c) {
     return '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">' +
       marker(CAT_SHAPE[c], 6, 6, 4.5, catColor(c), false) + "</svg>";
@@ -694,22 +724,33 @@
       var wins = {};
       zones.forEach(function (z) { var c = cat(fastest[z].source); wins[c] = (wins[c] || 0) + 1; });
       var lead = Object.keys(wins).sort(function (a, b) { return wins[b] - wins[a]; })[0];
+      /* Which source is first, zone by zone, as one segmented bar. */
+      var bar = '<span class="tile-bar" aria-hidden="true">' + CAT_ORDER.filter(function (c) { return wins[c]; }).map(function (c) {
+        return '<i style="flex:' + wins[c] + ";background:" + catColor(c) + '" title="' + esc(CAT_LABEL[c]) + " first in " + wins[c] + '"></i>';
+      }).join("") + "</span>";
       tiles.push(["First price is out after", fmtMin(median(zones.map(function (z) { return fastest[z].last7.p50; }))),
-        "median zone · " + CAT_LABEL[lead] + " first in " + wins[lead] + " of " + zones.length]);
+        "Median zone · " + CAT_LABEL[lead] + " first in " + wins[lead] + " of " + zones.length, bar]);
     }
     var es = (byCat.esett || []).map(function (g) { return g.last7.p50; }).filter(function (v) { return v != null; });
     if (es.length) {
       var lo = Math.round(Math.min.apply(null, es)), hi = Math.round(Math.max.apply(null, es));
-      tiles.push(["eSett publishes after", (lo === hi ? lo : lo + "–" + hi) + "<small>min</small>", "typical, depending on the zone"]);
+      tiles.push(["eSett publishes after", (lo === hi ? lo : lo + "–" + hi) + "<small>min</small>", "Typical, depending on the zone"]);
     }
     var pub = sum(imb.map(function (g) { return g.last7.published || 0; }));
     var rev = sum(imb.map(function (g) { return g.last7.revised || 0; }));
-    if (pub) tiles.push(["First prices changed later", fmtPct(rev / pub, 1), fmtInt(rev) + " of " + fmtInt(pub) + " imbalance prices"]);
+    if (pub) {
+      tiles.push(["First prices changed later", fmtPct(rev / pub, 1), fmtInt(rev) + " of " + fmtInt(pub) + " imbalance prices",
+        '<span class="tile-meter" aria-hidden="true"><i style="width:' + Math.max(rev ? 2 : 0, Math.round(rev / pub * 100)) + '%"></i></span>']);
+    }
     var revisions = sum((s.groups || []).map(function (g) { return (g.last7 && g.last7.revisions) || 0; }));
     var p = s.polls_24h || {}, total = (p.ok || 0) + (p.skipped || 0) + (p.error || 0);
-    tiles.push(["Price changes logged", fmtInt(revisions), "last 7 days" + (total ? " · " + fmtPct(p.ok / total) + " of checks ok" : "")]);
+    var health = total ? (p.ok / total >= 0.98 ? "up" : p.ok / total >= 0.9 ? "amber" : "down") : "";
+    tiles.push(["Price changes logged", fmtInt(revisions), "Last 7 days" + (total ? " · " + fmtPct(p.ok / total) + " of checks OK" : ""),
+      health ? '<span class="tile-health"><span class="dot ' + health + '"></span>Collector ' +
+        (health === "up" ? "healthy" : health === "amber" ? "partly failing" : "failing") + "</span>" : ""]);
     $("stats").innerHTML = tiles.map(function (t) {
-      return '<div class="stat"><dt>' + esc(t[0]) + '</dt><dd><span class="v">' + t[1] + '</span><span class="s">' + esc(t[2]) + "</span></dd></div>";
+      return '<div class="stat"><dt>' + esc(t[0]) + '</dt><dd><span class="v">' + t[1] + "</span>" + (t[3] || "") +
+        '<span class="s">' + esc(t[2]) + "</span></dd></div>";
     }).join("");
   }
 
@@ -797,6 +838,12 @@
 
   /* ---------- right now ---------- */
 
+  function trimZeros(values) {
+    var v = (values || []).slice();
+    while (v.length && v[v.length - 1] === 0) v.pop();
+    return v;
+  }
+
   function renderBoard(s) {
     var now = (s.now || []).filter(function (e) { return inZones(e.zone); });
     var table = $("board");
@@ -805,7 +852,7 @@
       $("board-legend").innerHTML = ""; $("board-note").textContent = ""; $("board-asof").textContent = "";
       return;
     }
-    $("board-asof").textContent = "as of " + fmtTime(s.generated_at, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) + " " + tzName(s.generated_at);
+    $("board-asof").textContent = "EUR/MWh · As of " + fmtTime(s.generated_at, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) + " " + tzName(s.generated_at);
     var cats = CAT_ORDER.filter(function (c) { return now.some(function (e) { return cat(e.source) === c; }); });
     var p95 = {};
     (s.groups || []).forEach(function (g) { if (g.data === "imbalance" && g.last7) p95[g.source + "|" + g.zone] = g.last7.p95; });
@@ -825,16 +872,21 @@
         var limit = p95[e.source + "|" + z];
         var late = limit != null && e.minutes_since_end > limit + 30;
         var isNewest = entries.length > 1 && e === newest && entries.filter(function (x) { return x.interval_start === e.interval_start; }).length === 1;
-        return "<td><span class=\"px\">" + fmtPrice(e.price) + (zero ? "*" : "") + '</span> <span class="muted small">EUR/MWh</span>' +
-          '<span class="px-sub">for ' + esc(fmtTime(e.interval_start, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })) +
+        return '<td><div class="px-line"><span class="px">' + fmtPrice(e.price) + (zero ? "*" : "") + "</span>" +
+          /* eSett's 0.00 is a placeholder, not a price move: no change pill, and the line stops
+             at the last real price. */
+          (zero || (e.source === "esett" && e.prev_price === 0) ? "" : chg(e.prev_price, e.price)) + "</div>" +
+          sparkline(zero ? trimZeros(e.recent) : e.recent) +
+          '<span class="px-sub">For ' + esc(fmtTime(e.interval_start, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })) +
           " · " + esc(fmtDur(e.minutes_since_end)) + " ago" + (cat(e.source) === "tso" ? " · " + esc(SRC_LABEL[e.source]) : "") + "</span>" +
-          (isNewest ? '<span class="badge newest">newest</span> ' : "") +
-          (late ? '<span class="badge late" title="Older than this source usually is">⚠ later than usual</span>' : "") + "</td>";
+          (isNewest ? '<span class="badge newest">Newest</span> ' : "") +
+          (late ? '<span class="badge late" title="Older than this source usually is">⚠ Later than usual</span>' : "") + "</td>";
       }).join("") + "</tr>";
     }).join("");
     table.innerHTML = head + "<tbody>" + body + "</tbody>";
     $("board-legend").innerHTML = "";
     $("board-note").textContent = (zeroSeen ? "* eSett often shows 0.00 first and replaces it with the real price later. " : "") +
+      "The change is against the interval before; the line shows up to the last 4 hours. " +
       "Times are when each 15-minute interval started, and how long ago it ended. " +
       "“Later than usual” means the newest price is more than 30 minutes older than this source’s 95th percentile.";
   }
@@ -848,8 +900,9 @@
     $("recent").innerHTML = shown.length ? shown.map(function (r) {
       return '<li><span class="t">' + esc(hm(r.revised_at)) + "</span><span>" + srcCell(r.source) + " · " + esc(r.zone) +
         ' <span class="muted">' + esc(r.data === "imbalance" ? "for " + hm(r.interval_start) : r.data) + "</span></span>" +
-        '<span class="v">' + fmtPrice(r.old) + " → " + (r.new == null ? "withdrawn" : fmtPrice(r.new)) + "</span></li>";
-    }).join("") + (recent.length > shown.length ? '<li class="more">and ' + (recent.length - shown.length) + " more</li>" : "")
+        '<span class="v"><span class="muted">' + fmtPrice(r.old) + " →</span> " +
+        (r.new == null ? '<span class="tag withdrawn">Withdrawn</span>' : "<b>" + fmtPrice(r.new) + "</b> " + chg(r.old, r.new, { plain: true })) + "</span></li>";
+    }).join("") + (recent.length > shown.length ? '<li class="more">+' + (recent.length - shown.length) + " more in the revision log</li>" : "")
       : '<li class="more">No price changed in the last 3 hours' + (state.zones ? " in the selected zones" : "") + ".</li>";
   }
 
@@ -976,6 +1029,17 @@
 
   function renderZonesTable(s) {
     var rows = imbalanceGroups(s);
+    /* Speed against the fastest source in the same zone: first, within 15 minutes, or slower. */
+    state.fastest = fastestByZone(rows);  /* read at render time: the table keeps these closures */
+    var speed = function (g) {
+      var f = state.fastest[g.zone];
+      if (g.last7.p50 == null || !f) return "";
+      var gap = g.last7.p50 - f.last7.p50;
+      var k = gap <= 0 ? ["up", "First in " + g.zone] : gap <= 15 ? ["amber", Math.round(gap) + " min behind the first"]
+        : ["down", Math.round(gap) + " min behind the first"];
+      return '<span class="dot ' + k[0] + '" title="' + esc(k[1]) + '" aria-label="' + esc(k[1]) + '"></span>';
+    };
+    var shareTone = function (v) { return v == null ? "" : v === 0 ? "up" : v < 0.1 ? "amber" : "down"; };
     if (state.tables.zones) { state.tables.zones.setRows(rows); return; }
     state.tables.zones = new DataTable($("zones-table"), {
       id: "zones", rows: rows, page: 100, csvName: "nordic-imbalance-publication.csv",
@@ -985,14 +1049,14 @@
           filterSort: function (a, b) { return zoneIndex(a) - zoneIndex(b); } },
         { key: "country", label: "Country", plural: "countries", get: function (g) { return country(g.zone); } },
         { key: "source", label: "Source", get: function (g) { return SRC_LABEL[g.source]; }, html: function (g) { return srcCell(g.source); } },
-        { key: "p50", label: "Median delay", csvLabel: "Median delay (min)", num: true, get: function (g) { return g.last7.p50; }, html: function (g) { return fmtMin(g.last7.p50); } },
+        { key: "p50", label: "Median delay", csvLabel: "Median delay (min)", num: true, get: function (g) { return g.last7.p50; }, html: function (g) { return '<span class="speed">' + speed(g) + fmtMin(g.last7.p50) + "</span>"; } },
         { key: "p95", label: "95% within", csvLabel: "95% within (min)", num: true, get: function (g) { return g.last7.p95; }, html: function (g) { return fmtMin(g.last7.p95); } },
         { key: "max", label: "Slowest", csvLabel: "Slowest (min)", num: true, get: function (g) { return g.last7.max; }, html: function (g) { return fmtDur(g.last7.max); } },
         { key: "n", label: "Intervals", num: true, get: function (g) { return g.last7.n; }, html: function (g) { return fmtInt(g.last7.n); } },
         { key: "share", label: "Changed later", csvLabel: "Changed later (share)", num: true, get: function (g) { return g.last7.revised_share; },
           html: function (g) {
             var v = g.last7.revised_share;
-            return v == null ? "—" : '<span class="meter">' + fmtPct(v, 1) + '<span class="b"><i style="width:' + Math.round(v * 100) + '%"></i></span></span>';
+            return v == null ? "—" : '<span class="meter ' + shareTone(v) + '">' + fmtPct(v, 1) + '<span class="b"><i style="width:' + Math.max(v > 0 ? 4 : 0, Math.round(v * 100)) + '%"></i></span></span>';
           } },
         { key: "revisions", label: "Changes", num: true, get: function (g) { return g.last7.revisions; }, html: function (g) { return fmtInt(g.last7.revisions); } },
         { key: "lag", label: "Typical change after", csvLabel: "Typical change after (h)", num: true, get: function (g) { return g.last7.lag_p50_h; }, html: function (g) { return fmtHours(g.last7.lag_p50_h); } }
@@ -1066,7 +1130,6 @@
 
   function renderRevisionTable(revs) {
     var change = function (r) { return r.new == null ? null : r.new - r.old; };
-    var pct = function (r) { return r.new == null || !r.old ? null : (r.new - r.old) / Math.abs(r.old); };
     var after = function (r) { return (Date.parse(r.revised_at) - Date.parse(r.first_published_at)) / 3600000; };
     if (state.tables.revisions) { state.tables.revisions.setRows(revs); return; }
     state.tables.revisions = new DataTable($("rev-table"), {
@@ -1086,16 +1149,15 @@
           html: function (r) { return esc(dateTime(r.interval_start)) + ' <span class="muted">· ' + esc(r.interval_minutes) + " min</span>"; } },
         { key: "old", label: "First price", num: true, get: function (r) { return r.old; }, html: function (r) { return fmtPrice(r.old); } },
         { key: "new", label: "Now", num: true, get: function (r) { return r.new; },
-          html: function (r) { return r.new == null ? '<span class="tag withdrawn">withdrawn</span>' : fmtPrice(r.new); } },
+          html: function (r) { return r.new == null ? '<span class="tag withdrawn">Withdrawn</span>' : "<b>" + fmtPrice(r.new) + "</b>"; } },
         { key: "unit", label: "Unit", get: function (r) { return r.unit; }, html: function (r) { return '<span class="muted">' + esc(r.unit) + "</span>"; } },
         { key: "change", label: "Change", num: true, get: change,
           html: function (r) {
-            var d = change(r), p = pct(r);
-            if (d == null) return "—";
-            return (d > 0 ? "▲ +" : d < 0 ? "▼ " : "") + fmtPrice(d) + (p != null ? ' <span class="muted">' + (p > 0 ? "+" : "") + (p * 100).toFixed(0) + "%</span>" : "");
+            return r.new == null ? "—" : chg(r.old, r.new, { plain: true });
           } },
         { key: "after", label: "After", csvLabel: "After first publication (h)", num: true, get: after, html: function (r) { return fmtHours(after(r)); } },
-        { key: "kind", label: "Type", get: function (r) { return r.kind; }, html: function (r) { return '<span class="tag ' + esc(r.kind) + '">' + esc(r.kind) + "</span>"; }, hidden: true },
+        { key: "kind", label: "Type", get: function (r) { return r.kind === "withdrawn" ? "Withdrawn" : "Changed"; },
+          html: function (r) { return '<span class="tag ' + esc(r.kind) + '">' + (r.kind === "withdrawn" ? "Withdrawn" : "Changed") + "</span>"; }, hidden: true },
         { key: "first", label: "First published", time: true, hidden: true, get: function (r) { return r.first_published_at; },
           html: function (r) { return esc(dateTime(r.first_published_at)); } }
       ]
@@ -1175,6 +1237,28 @@
     });
   }
 
+  /* Light or dark: follows the system until the reader picks one (set early by the inline
+     script in the page head, so there is no flash). */
+  function bindTheme() {
+    var btn = $("theme-btn"), root = document.documentElement;
+    var dark = function () {
+      var t = root.getAttribute("data-theme");
+      return t ? t === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    };
+    function label() {
+      var text = dark() ? "Switch to light mode" : "Switch to dark mode";
+      btn.setAttribute("aria-label", text);
+      btn.title = text;
+    }
+    btn.addEventListener("click", function () {
+      var next = dark() ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      save("nbw.theme", next);
+      label();
+    });
+    label();
+  }
+
   /* The zone picker narrows every section to the zones a reader follows. */
   function bindZonePicker() {
     var btn = $("zp-btn"), pop = $("zp-pop");
@@ -1187,9 +1271,9 @@
       var covered = whole.length && whole.reduce(function (s, c) {
         return s + ZONES.filter(function (z) { return z.slice(0, 2) === c; }).length;
       }, 0) === n;
-      btn.textContent = !state.zones ? "Zones: all" : covered && whole.length <= 2
-        ? "Zones: " + whole.map(function (c) { return COUNTRY[c]; }).join(", ")
-        : n === 1 ? "Zone: " + state.zones[0] : "Zones: " + n;
+      $("zp-label").textContent = !state.zones ? "All zones" : covered && whole.length <= 2
+        ? whole.map(function (c) { return COUNTRY[c]; }).join(", ")
+        : n === 1 ? "Zone " + state.zones[0] : n + " zones";
       btn.setAttribute("data-active", String(!!state.zones));
     }
     function apply(list) {
@@ -1208,7 +1292,7 @@
           (zs.length > 1 ? '<div class="zones">' + zs.map(function (z) {
             return '<label><input type="checkbox" data-zone="' + z + '"' + (sel.indexOf(z) >= 0 ? " checked" : "") + ">" + z + "</label>";
           }).join("") + "</div>" : "") + "</fieldset>";
-      }).join("") + '<div class="pop-foot"><button type="button" class="btn ghost" data-all>Show all</button>' +
+      }).join("") + '<div class="pop-foot"><button type="button" class="btn ghost" data-all>Show all zones</button>' +
         '<button type="button" class="btn ghost" data-close>Done</button></div>';
       pop.querySelectorAll("[data-mixed]").forEach(function (cb) { cb.indeterminate = true; });
       pop.querySelectorAll("input[data-zone]").forEach(function (cb) {
@@ -1243,7 +1327,7 @@
       if (pop.hidden) { draw(); pop.hidden = false; btn.setAttribute("aria-expanded", "true"); } else close();
     });
     document.addEventListener("click", function (e) {
-      if (!pop.hidden && !pop.contains(e.target) && e.target !== btn) close();
+      if (!pop.hidden && !pop.contains(e.target) && !btn.contains(e.target)) close();
     });
     document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !pop.hidden) { close(); btn.focus(); } });
     label();
@@ -1310,6 +1394,7 @@
   renderFooter();
   renderGlossary();
   bindTerms(document);
+  bindTheme();
   bindTimeZone();
   bindZonePicker();
   document.addEventListener("pointerdown", function (e) {
