@@ -8,5 +8,5 @@ DATA_BASE_URL = "https://raw.githubusercontent.com/Razikale365/nordic-balancing-
 [[d1_databases]]
 binding = "DB"
 database_name = "nbw-waitlist"
-database_id = "REPLACE_WITH_D1_ID"
+database_id = "cf8b191b-49c2-4ac4-b13a-7c394c846b33"
 migrations_dir = "migrations"
