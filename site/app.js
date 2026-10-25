@@ -1059,7 +1059,7 @@
             return v == null ? "—" : '<span class="meter ' + shareTone(v) + '">' + fmtPct(v, 1) + '<span class="b"><i style="width:' + Math.max(v > 0 ? 4 : 0, Math.round(v * 100)) + '%"></i></span></span>';
           } },
         { key: "revisions", label: "Changes", num: true, get: function (g) { return g.last7.revisions; }, html: function (g) { return fmtInt(g.last7.revisions); } },
-        { key: "lag", label: "Typical change after", csvLabel: "Typical change after (h)", num: true, get: function (g) { return g.last7.lag_p50_h; }, html: function (g) { return fmtHours(g.last7.lag_p50_h); } }
+        { key: "lag", label: "Typically after", csvLabel: "Typically changed after (h)", num: true, get: function (g) { return g.last7.lag_p50_h; }, html: function (g) { return fmtHours(g.last7.lag_p50_h); } }
       ]
     });
   }
