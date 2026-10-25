@@ -7,24 +7,27 @@ version it sees.
 
 Live site: _URL to be added once the Cloudflare Pages project exists._
 
-One observation from the first days of data: eSett publishes Danish imbalance prices about an
-hour after the settlement interval ends, and a share of them is revised one to two hours later.
-Swedish FCR capacity prices appear a day or more ahead of delivery and are revised again when
-the next day's auction clears.
+One observation from the first days of data: ENTSO-E has the first imbalance price in most
+Nordic zones, 15-45 minutes after the interval ends, while eSett publishes the same prices 20-80
+minutes later. For Denmark and Finland eSett often first publishes 0.00 and replaces it with the
+real price one to two hours later.
 
 ## What the site shows
 
-- Key figures: observations tracked, revisions in the last 7 days, share of first prices later
-  revised, poll success in the last 24 hours.
-- Publication delay: P50 and P95 minutes from the end of the settlement interval until the
-  imbalance price first appears, per source and zone.
-- Revision share: how often the first published imbalance price is later changed or withdrawn.
-- Reserve capacity: for each product and zone, how far ahead prices appear, the revised share
-  and the typical revision lag.
-- Daily trend: P50 publication delay per source and product over the last closed UTC days.
-- Latest revisions: a filterable feed of every recorded price change, newest first.
+- Headline figures and a short list of findings, computed from the current data.
+- Imbalance prices: minutes from the end of each interval until the first price appears, per
+  zone and source (median and 95th percentile), the share of first prices changed later, and
+  what those changes were.
+- Reserve capacity: how many hours before delivery each product's price appears, and how often
+  it is re-priced.
+- Revision log: an hourly timeline and a table of every recorded price change.
+- Every table can be searched, filtered, sorted, reordered, trimmed to chosen columns and
+  downloaded as CSV. Times can be shown in UTC or Nordic time.
 - A waitlist form ("get revision alerts and API access") backed by a Cloudflare D1 table
-  through one Pages Function. No tracking, no accounts.
+  through one Pages Function. No tracking, no cookies, no accounts.
+
+The page is plain HTML, CSS and JavaScript with inline SVG charts: no build step and no
+third-party scripts.
 
 ## How the data gets there
 
