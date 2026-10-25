@@ -16,12 +16,13 @@ export async function onRequestGet({ request, env, params }) {
     return json({ ok: false, error: "not found" }, 404);
   }
   // Without a data source (local dev), serve the static file from site/data.
-  if (!env || !env.DATA_BASE_URL) {
+  if (!env.DATA_BASE_URL) {
     return env.ASSETS.fetch(request);
   }
 
+  // Cache only successful responses, so a missing branch or an upstream error is not pinned.
   const upstream = await fetch(`${env.DATA_BASE_URL.replace(/\/$/, "")}/${name}`, {
-    cf: { cacheTtl: TTL, cacheEverything: true }
+    cf: { cacheEverything: true, cacheTtlByStatus: { "200-299": TTL, "300-599": 0 } }
   });
   if (!upstream.ok) {
     return json({ ok: false, error: "data unavailable" }, 502);

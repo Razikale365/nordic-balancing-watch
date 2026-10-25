@@ -45,9 +45,13 @@ export async function onRequestPost({ request, env }) {
   }
 
   const createdAt = new Date().toISOString().replace(/\.\d+Z$/, "Z");
-  await env.DB.prepare(
-    "INSERT INTO waitlist (email, role, created_at) VALUES (?1, ?2, ?3) ON CONFLICT(email) DO NOTHING"
-  ).bind(email, role || null, createdAt).run();
+  try {
+    await env.DB.prepare(
+      "INSERT INTO waitlist (email, role, created_at) VALUES (?1, ?2, ?3) ON CONFLICT(email) DO NOTHING"
+    ).bind(email, role || null, createdAt).run();
+  } catch {
+    return json({ ok: false, error: "service unavailable" }, 503);
+  }
 
   return json({ ok: true }, 200);
 }

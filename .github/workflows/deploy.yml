@@ -28,15 +28,21 @@ jobs:
       - name: Test the functions
         run: node --test tests/*.test.mjs
 
-      - name: Apply D1 migrations and deploy to Cloudflare Pages
+      - name: Apply D1 migrations
         if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: |
-            d1 migrations apply nbw-waitlist --remote
-            pages deploy site --project-name=nordic-balancing-watch --branch=main
+          command: d1 migrations apply nbw-waitlist --remote
+
+      - name: Deploy to Cloudflare Pages
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site --project-name=nordic-balancing-watch --branch=main
 
       - name: Skip deploy
         if: ${{ env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == '' }}

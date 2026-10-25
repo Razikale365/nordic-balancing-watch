@@ -87,7 +87,10 @@ python scripts/check_data.py tests/fixtures/data
 2. Create the D1 database `nbw-waitlist` (`wrangler d1 create nbw-waitlist`) and paste the
    printed id into `database_id` in `wrangler.toml`. The deploy workflow applies
    `migrations/` remotely on every run.
+   Do this before step 3: the migrations step fails while the placeholder id is in place.
 3. Add two repository secrets: `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
    Without them the workflow still runs the tests but skips the deploy step.
 4. Give the collector a deploy key with write access so it can push `summary.json` and
    `revisions.json` to the `data` branch every hour.
+5. Add a Cloudflare rate-limiting rule for `/api/waitlist` (for example 5 requests per minute
+   per IP); the function itself does not rate-limit.

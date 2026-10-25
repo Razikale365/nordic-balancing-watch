@@ -313,10 +313,10 @@
       }
       var lagH = (Date.parse(r.revised_at) - Date.parse(r.first_published_at)) / 3600000;
       return [
-        cell(utcShort(r.interval_start) + '<span class="muted"> · ' + r.interval_minutes + " min</span>"),
+        cell(esc(utcShort(r.interval_start)) + '<span class="muted"> · ' + esc(r.interval_minutes) + " min</span>"),
         cell(esc(r.source)), cell(esc(r.data)), cell(esc(r.zone)),
         cell(oldNew + pct), cell(isFinite(lagH) ? lagH.toFixed(1) + " h" : "—", "num"),
-        cell(utcShort(r.revised_at))
+        cell(esc(utcShort(r.revised_at)))
       ];
     }));
     $("rev-empty").hidden = rows.length > 0;
