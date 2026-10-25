@@ -1255,7 +1255,7 @@
       .format(new Date(s.collecting_since)) : "";
     var text = "Nordic Balancing Watch (" + new Date().getUTCFullYear() + "). Publication times and revisions of " +
       "Nordic imbalance and reserve capacity prices" + (since ? ", collected since " + since : "") + ". " +
-      location.origin + "/ (accessed " + accessed + ").";
+      (CFG.siteUrl ? CFG.siteUrl.replace(/\/?$/, "/") + " (accessed " + accessed + ")." : "Accessed " + accessed + ".");
     $("cite-text").textContent = text;
     $("cite-copy").onclick = function () {
       var done = function () { $("cite-msg").textContent = "Copied."; };
