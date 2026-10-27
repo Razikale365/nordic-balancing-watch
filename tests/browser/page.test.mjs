@@ -19,10 +19,13 @@ const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": 
 // unknown gets 404.html.
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, "http://x").pathname;
-  const file = path === "/" ? new URL("index.html", SITE)
-    : path.startsWith("/data/") ? new URL(path.slice(6), FIXTURES)
-    : new URL(path.slice(1), SITE);
+  const [base, rel] = path === "/" ? [SITE, "index.html"]
+    : path.startsWith("/data/") ? [FIXTURES, path.slice(6)]
+    : [SITE, path.slice(1)];
+  const file = new URL(rel, base);
   try {
+    // Serve nothing outside the folder: "/data//etc/passwd" would otherwise resolve to /etc/passwd.
+    if (!file.href.startsWith(base.href)) throw new Error("outside the served folder");
     const body = await readFile(file);
     res.writeHead(200, { "content-type": TYPES[extname(file.pathname)] || "application/octet-stream" });
     res.end(body);
@@ -160,6 +163,9 @@ test("crawler files and unknown addresses are served as expected", async () => {
       const res = await page.request.get(`${origin}${path}`);
       assert.equal(res.status(), 200, path);
       assert.equal(res.headers()["content-type"], type);
+    }
+    for (const path of ["/data//etc/passwd", "//etc/passwd", "/..%2f..%2fREADME.md", "/data/%2e%2e%2f%2e%2e%2fREADME.md"]) {
+      assert.equal((await page.request.get(`${origin}${path}`)).status(), 404, path);
     }
     const res = await page.goto(`${origin}/no-such-page`);
     assert.equal(res.status(), 404);
