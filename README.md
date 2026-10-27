@@ -91,8 +91,10 @@ The browser tests check that the heading, explanations, method and glossary stay
 with JavaScript off, when `app.js` fails to load and when the data files cannot be fetched,
 and that the figures appear when they can. They serve the pages with the headers from
 `site/_headers`, fail on any Content-Security-Policy violation, and check that markup in the
-data files is never run and that CSV downloads cannot carry spreadsheet formulas. Install Playwright for them with
-`npm install --no-save playwright && npx playwright install chromium`.
+data files is never run and that CSV downloads cannot carry spreadsheet formulas.
+
+Install the test dependencies with `python -m pip install -r requirements-dev.txt` and
+`npm ci --prefix tests/browser && tests/browser/node_modules/.bin/playwright install chromium`.
 
 ## Search engines
 
@@ -120,6 +122,9 @@ final domain.
   not numbers are shown as a dash.
 - The workflows pin every action to a commit SHA, do not keep the git token after checkout,
   and pass the Cloudflare token only to the two steps that need it.
+- Dependabot (`.github/dependabot.yml`) proposes weekly updates to those actions and to the
+  test-only dependencies in `requirements-dev.txt` and `tests/browser/package.json`, once a
+  release is a week old.
 
 ## One-time setup
 

@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "Test-only dependencies for the browser tests; the site itself has none.",
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

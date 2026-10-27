@@ -1,0 +1,29 @@
+# Weekly pull requests that keep pinned versions current: the workflow actions (pinned to
+# commits), and the test-only Python and browser-test dependencies. The site itself has no
+# dependencies. A release must be a week old before it is proposed; security updates, once
+# enabled in the repository settings, are not held back by that.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /tests/browser
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
