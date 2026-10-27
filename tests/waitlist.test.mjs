@@ -97,3 +97,43 @@ test("invalid role gets 400", async () => {
   assert.equal(res.status, 400);
   assert.equal(calls.length, 0);
 });
+
+test("a body that is not declared as JSON gets 415 and stores nothing", async () => {
+  // What a cross-site <form enctype="text/plain"> could send without a CORS preflight.
+  for (const type of ["text/plain", "application/x-www-form-urlencoded", null]) {
+    const calls = [];
+    const headers = type ? { "content-type": type } : {};
+    const request = new Request(URL, { method: "POST", headers, body: '{"email":"a@b.co"}' });
+    if (!type) request.headers.delete("content-type");
+    const res = await onRequestPost({ request, env: { DB: fakeDb(calls) } });
+    assert.equal(res.status, 415, String(type));
+    assert.equal(calls.length, 0);
+  }
+  const ok = await onRequestPost({
+    request: post({ email: "a@b.co" }, { "content-type": "application/json; charset=utf-8" }),
+    env: { DB: fakeDb([]) }
+  });
+  assert.equal(ok.status, 200);
+});
+
+test("an oversized body gets 413 and stores nothing", async () => {
+  const calls = [];
+  const res = await onRequestPost({
+    request: post({ email: "a@b.co", role: "", pad: "x".repeat(5000) }),
+    env: { DB: fakeDb(calls) }
+  });
+  assert.equal(res.status, 413);
+  assert.equal(calls.length, 0);
+});
+
+test("responses are never cached or sniffed", async () => {
+  for (const res of [
+    await onRequestPost({ request: post({ email: "a@b.co" }), env: { DB: fakeDb([]) } }),
+    await onRequestPost({ request: post({ email: "nope" }), env: {} }),
+    onRequest()
+  ]) {
+    assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    assert.match(res.headers.get("content-security-policy"), /default-src 'none'/);
+  }
+});

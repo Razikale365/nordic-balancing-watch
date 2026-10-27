@@ -3,60 +3,24 @@
 // Needs Playwright with Chromium: node --test tests/browser/*.test.mjs
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { extname } from "node:path";
+import { startServer, openPage } from "./server.mjs";
 
 const { chromium } = createRequire(import.meta.url)("playwright");
 
-const SITE = new URL("../../site/", import.meta.url);
-const FIXTURES = new URL("../fixtures/data/", import.meta.url);
-const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript",
-  ".json": "application/json", ".svg": "image/svg+xml", ".txt": "text/plain", ".xml": "application/xml" };
-
-// Serves site/ like Pages does: / is index.html, /data/* comes from the fixtures, anything
-// unknown gets 404.html.
-const server = createServer(async (req, res) => {
-  const path = new URL(req.url, "http://x").pathname;
-  const [base, rel] = path === "/" ? [SITE, "index.html"]
-    : path.startsWith("/data/") ? [FIXTURES, path.slice(6)]
-    : [SITE, path.slice(1)];
-  const file = new URL(rel, base);
-  try {
-    // Serve nothing outside the folder: "/data//etc/passwd" would otherwise resolve to /etc/passwd.
-    if (!file.href.startsWith(base.href)) throw new Error("outside the served folder");
-    const body = await readFile(file);
-    res.writeHead(200, { "content-type": TYPES[extname(file.pathname)] || "application/octet-stream" });
-    res.end(body);
-  } catch {
-    res.writeHead(404, { "content-type": TYPES[".html"] });
-    res.end(await readFile(new URL("404.html", SITE)));
-  }
-});
-
-let browser, origin;
+let browser, server, origin;
 before(async () => {
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  origin = `http://127.0.0.1:${server.address().port}`;
+  server = await startServer();
+  origin = server.origin;
   browser = await chromium.launch();
 });
 after(async () => {
   await browser?.close();
-  server.close();
+  server?.close();
 });
 
-// Opens the home page; `route` can fail requests. Collects uncaught script errors.
-async function open({ javaScriptEnabled = true, route } = {}) {
-  const context = await browser.newContext({ javaScriptEnabled });
-  const page = await context.newPage();
-  page.setDefaultTimeout(10000);
-  const errors = [];
-  page.on("pageerror", (e) => errors.push(e.message));
-  if (route) await page.route(route.match, route.handle);
-  await page.goto(`${origin}/`, { waitUntil: "load" });
-  return { page, errors, close: () => context.close() };
-}
+// Opens the home page under the site's real security headers; `route` can fail requests.
+const open = (options) => openPage(browser, `${origin}/`, options);
 
 // What a reader must always get, whatever happens to the scripts or the data.
 async function assertExplanationsVisible(page) {

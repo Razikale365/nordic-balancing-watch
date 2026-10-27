@@ -3,8 +3,13 @@
 const FILES = new Set(["summary.json", "revisions.json"]);
 const TTL = 300;
 // Crawlers may fetch the files (search engines need them to render the page) but should not
-// list them as search results of their own.
-const NOINDEX = { "x-robots-tag": "noindex" };
+// list them as search results of their own. Function responses do not get the headers in
+// site/_headers, so the security headers are set here too.
+const NOINDEX = {
+  "x-robots-tag": "noindex",
+  "x-content-type-options": "nosniff",
+  "content-security-policy": "default-src 'none'; frame-ancestors 'none'"
+};
 
 function json(body, status) {
   return new Response(JSON.stringify(body), {

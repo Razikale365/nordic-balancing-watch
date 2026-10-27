@@ -22,6 +22,8 @@ test("serves a valid file from the data branch with a cache header", async () =>
   assert.equal(res.status, 200);
   assert.match(res.headers.get("cache-control"), /max-age=300/);
   assert.equal(res.headers.get("x-robots-tag"), "noindex");
+  assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+  assert.match(res.headers.get("content-security-policy"), /default-src 'none'/);
   assert.equal((await res.json()).schema, 1);
 });
 

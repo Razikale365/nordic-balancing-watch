@@ -1,11 +1,19 @@
 // Cloudflare Pages Function: POST /api/waitlist — stores an email + optional role in D1.
 const ROLES = new Set(["trader", "brp", "bess", "analyst", "researcher", "other"]);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// A signup is under 400 bytes; anything much larger is not from the form.
+const MAX_BODY = 2048;
+// Function responses do not get the headers in site/_headers.
+const SECURITY = {
+  "x-content-type-options": "nosniff",
+  "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+  "cache-control": "no-store"
+};
 
 function json(body, status) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" }
+    headers: { "content-type": "application/json", ...SECURITY }
   });
 }
 
@@ -15,9 +23,22 @@ export async function onRequestPost({ request, env }) {
     return json({ ok: false, error: "forbidden origin" }, 403);
   }
 
+  // Only JSON: a cross-site page cannot send it without a CORS preflight, which is refused.
+  const type = (request.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+  if (type !== "application/json") {
+    return json({ ok: false, error: "expected JSON" }, 415);
+  }
+  if (Number(request.headers.get("content-length")) > MAX_BODY) {
+    return json({ ok: false, error: "request too large" }, 413);
+  }
+
   let body;
   try {
-    body = await request.json();
+    const text = await request.text();
+    if (text.length > MAX_BODY) {
+      return json({ ok: false, error: "request too large" }, 413);
+    }
+    body = JSON.parse(text);
   } catch {
     return json({ ok: false, error: "invalid JSON body" }, 400);
   }

@@ -78,8 +78,9 @@
     return (a / 1440).toFixed(1) + " days";
   }
   function fmtHours(h) { return h == null ? "—" : h.toFixed(h < 10 ? 1 : 0) + " h"; }
+  /* Prices go into HTML unescaped, so anything that is not a finite number is shown as a dash. */
   function fmtPrice(p) {
-    if (p == null) return "—";
+    if (typeof p !== "number" || !isFinite(p)) return "—";
     var d = Math.abs(p) < 10 && p !== Math.round(p) ? 3 : 2;
     return p.toLocaleString("en-GB", { minimumFractionDigits: Math.min(2, d), maximumFractionDigits: d });
   }
@@ -650,7 +651,9 @@
       /* Derived numbers (hours, shares) carry float noise such as 25.334999999999997. */
       if (typeof v === "number" && isFinite(v) && v !== Math.round(v)) v = Number(v.toFixed(6));
       var s = v == null ? "" : String(v);
-      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      /* Text that a spreadsheet would read as a formula is prefixed with an apostrophe. */
+      if (typeof v !== "number" && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
+      return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     };
     var text = [cols.map(function (c) { return cellOf(c.csvLabel || c.label); }).join(",")].concat(rows.map(function (r) {
       return cols.map(function (c) { return cellOf(c.csv ? c.csv(r) : c.get(r)); }).join(",");
