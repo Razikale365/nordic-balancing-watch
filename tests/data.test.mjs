@@ -21,12 +21,15 @@ test("serves a valid file from the data branch with a cache header", async () =>
   const res = await get("summary.json", { DATA_BASE_URL: BASE });
   assert.equal(res.status, 200);
   assert.match(res.headers.get("cache-control"), /max-age=300/);
+  assert.equal(res.headers.get("x-robots-tag"), "noindex");
   assert.equal((await res.json()).schema, 1);
 });
 
 test("unknown file names are 404 and never fetched", async () => {
   globalThis.fetch = async () => assert.fail("fetched");
-  assert.equal((await get("secrets.json", { DATA_BASE_URL: BASE })).status, 404);
+  const res = await get("secrets.json", { DATA_BASE_URL: BASE });
+  assert.equal(res.status, 404);
+  assert.equal(res.headers.get("x-robots-tag"), "noindex");
 });
 
 test("bad upstream data is 502", async () => {

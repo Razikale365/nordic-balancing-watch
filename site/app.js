@@ -18,24 +18,13 @@
   var COUNTRY = { DK: "Denmark", FI: "Finland", NO: "Norway", SE: "Sweden" };
   var ZONES = ["DK1", "DK2", "FI", "NO1", "NO2", "NO3", "NO4", "NO5", "SE1", "SE2", "SE3", "SE4"];
 
-  var GLOSSARY = {
-    imbalance: ["Imbalance price", "The price paid or received, per megawatt-hour, by companies whose actual production or use differed from what they planned. Set separately for every 15 minutes and every price zone, after the fact."],
-    interval: ["Settlement interval", "The 15-minute block that every imbalance price belongs to. Since 2023 the Nordic market settles in quarter-hours."],
-    zone: ["Price zone (bidding zone)", "An area with one price. Denmark has DK1 (west) and DK2 (east); Finland is one zone (FI); Norway has NO1–NO5 (NO1 Oslo, NO2 south, NO3 middle, NO4 north, NO5 west); Sweden has SE1–SE4 from north to south."],
-    esett: ["eSett", "The company that runs the joint imbalance settlement for Denmark, Finland, Norway and Sweden, owned by the national grid operators. Its figures are the ones the money is settled on."],
-    entsoe: ["ENTSO-E", "The association of European grid operators. Its Transparency Platform republishes market data from every member country."],
-    tso: ["TSO (national grid operator)", "Energinet in Denmark, Fingrid in Finland, Statnett in Norway and Svenska kraftnät in Sweden. Energinet and Fingrid publish imbalance prices on their own open-data sites."],
-    brp: ["Balance responsible party", "A company that has taken on the financial responsibility for a group of producers or consumers being in balance. It pays or receives the imbalance price."],
-    median: ["Median", "The middle value: half of the intervals were faster, half slower. A good picture of a typical day."],
-    p95: ["95th percentile", "95 out of 100 intervals were first seen by this time; only 1 in 20 took longer. A picture of a bad day."],
-    revision: ["Revision", "Any change to a price after it was first published."],
-    withdrawn: ["Withdrawal", "A price that was published and later disappeared from the source."],
-    reserve: ["Reserve capacity", "Payment for being ready to raise or lower power at short notice. The grid operator buys it ahead of time and calls on it when needed."],
-    fcr: ["FCR-N and FCR-D", "Frequency containment reserves: the fastest reserves, reacting within seconds. FCR-N handles normal small swings, FCR-D (up and down) disturbances such as a power plant tripping."],
-    afrr: ["aFRR", "Automatic frequency restoration reserve: brings the frequency back to 50 Hz within minutes, on an automatic signal."],
-    mfrr: ["mFRR", "Manual frequency restoration reserve: slower reserves activated on request, within about 15 minutes."],
-    auction: ["D-2 and D-1 auctions", "Reserve capacity is bought two days (D-2) and one day (D-1) before delivery. A price published after the first auction can change when the next one clears."]
-  };
+  /* The glossary is written in the page itself, so it reads without JavaScript; the tooltips
+     on glossary terms take their definitions from it. */
+  var GLOSSARY = {};
+  document.querySelectorAll("#glossary > div[id^='g-']").forEach(function (d) {
+    var text = function (sel) { return d.querySelector(sel).textContent.replace(/\s+/g, " ").trim(); };
+    GLOSSARY[d.id.slice(2)] = [text("dt"), text("dd")];
+  });
 
   var state = { tz: load("nbw.tz", "UTC"), zones: load("nbw.zones", null), summary: null, revisions: [], tables: {}, cov: { label: "last 7 days" } };
   function inZones(z) { return !state.zones || state.zones.indexOf(z) >= 0; }
@@ -247,11 +236,6 @@
       node.addEventListener("blur", hideTip);
       node.addEventListener("click", function (e) { e.stopPropagation(); at(); });
     });
-  }
-  function renderGlossary() {
-    $("glossary").innerHTML = Object.keys(GLOSSARY).map(function (k) {
-      return '<div id="g-' + k + '"><dt>' + esc(GLOSSARY[k][0]) + "</dt><dd>" + esc(GLOSSARY[k][1]) + "</dd></div>";
-    }).join("");
   }
 
   /* ---------- charts (inline SVG) ---------- */
@@ -1381,6 +1365,7 @@
       "Nordic imbalance and reserve capacity prices" + (since ? ", collected since " + since : "") + ". " +
       (CFG.siteUrl ? CFG.siteUrl.replace(/\/?$/, "/") + " (accessed " + accessed + ")." : "Accessed " + accessed + ".");
     $("cite-text").textContent = text;
+    $("cite-copy").hidden = false;
     $("cite-copy").onclick = function () {
       var done = function () { $("cite-msg").textContent = "Copied."; };
       if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () { $("cite-msg").textContent = "Select the text to copy it."; });
@@ -1433,7 +1418,6 @@
 
   renderWaitlist();
   renderFooter();
-  renderGlossary();
   bindTerms(document);
   bindTheme();
   bindTimeZone();
@@ -1449,7 +1433,7 @@
       return rev && rev.schema === 1 ? rev.revisions : [];
     }).catch(function () { return []; }).then(function (revs) {
       state.revisions = revs;
-      $("content").hidden = false;
+      document.querySelectorAll("[data-needs-data]").forEach(function (el) { el.hidden = false; });
       renderAll();
       renderCitation(summary);
       var w = window.innerWidth, t;
@@ -1464,5 +1448,6 @@
   }).catch(function (err) {
     if (window.console) console.warn("summary data unavailable:", err.message || err);
     $("empty-state").hidden = false;
+    renderCitation({});
   });
 })();

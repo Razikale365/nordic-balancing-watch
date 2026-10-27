@@ -82,9 +82,26 @@ python -m http.server -d site
 
 ```
 python -m pytest -q                        # check_data.py contract tests
-node --test tests/*.test.mjs               # waitlist and data function tests
+node --test tests/*.test.mjs               # waitlist, data function and page metadata tests
+node --test tests/browser/*.test.mjs       # the page in Chromium (needs Playwright)
 python scripts/check_data.py tests/fixtures/data
 ```
+
+The browser tests check that the heading, explanations, method and glossary stay readable
+with JavaScript off, when `app.js` fails to load and when the data files cannot be fetched,
+and that the figures appear when they can. Install Playwright for them with
+`npm install --no-save playwright && npx playwright install chromium`.
+
+## Search engines
+
+The explanatory text, method and glossary are in the HTML itself; only the figures, charts
+and tables wait for the data. `site/robots.txt` and `site/sitemap.xml` point crawlers at the
+page, the head carries a canonical link, Open Graph tags and schema.org `Dataset` data, and
+`/data/*.json` responses send `X-Robots-Tag: noindex` so crawlers can fetch them to render the
+page without listing them as results. The public address is written in `index.html` (canonical,
+`og:url`, JSON-LD, citation), `config.js`, `robots.txt` and `sitemap.xml`;
+`tests/seo.test.mjs` fails if they disagree, so change them together when the site moves to its
+final domain.
 
 ## One-time setup
 

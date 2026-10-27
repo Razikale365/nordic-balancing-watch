@@ -30,3 +30,10 @@ jobs:
 
       - name: Fixture data follows the contract
         run: python scripts/check_data.py tests/fixtures/data
+
+      # Test-only dependency: the site itself stays plain HTML, CSS and JavaScript.
+      - name: Install Playwright and Chromium
+        run: npm install --no-save --no-package-lock playwright@1.63.0 && npx playwright install --with-deps chromium
+
+      - name: Browser tests (page without JavaScript, without data, and with data)
+        run: node --test tests/browser/*.test.mjs
