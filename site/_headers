@@ -1,0 +1,16 @@
+# Security headers for the static pages (Cloudflare Pages). Responses from Pages Functions
+# (/data/*, /api/*) do not get these; the functions set their own.
+#
+# script-src: the site's own files plus the one inline script that applies the saved theme
+# before the page paints (same text in index.html and 404.html, so one hash). After editing
+# that script, update the hash: tests/seo.test.mjs fails until it matches.
+# style-src allows inline styles because app.js sizes bars with style attributes; with images,
+# fonts and connections limited to this origin, injected CSS could not send anything out.
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'self' 'sha256-tdb8EmuzNCwvHWAZ1OFhfkOuvyvgFKKdFSghdeWyesY='; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()
+  Cross-Origin-Opener-Policy: same-origin
+  Strict-Transport-Security: max-age=31536000

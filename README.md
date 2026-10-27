@@ -82,9 +82,49 @@ python -m http.server -d site
 
 ```
 python -m pytest -q                        # check_data.py contract tests
-node --test tests/*.test.mjs               # waitlist and data function tests
+node --test tests/*.test.mjs               # functions, page metadata and security header tests
+node --test tests/browser/*.test.mjs       # the page in Chromium (needs Playwright)
 python scripts/check_data.py tests/fixtures/data
 ```
+
+The browser tests check that the heading, explanations, method and glossary stay readable
+with JavaScript off, when `app.js` fails to load and when the data files cannot be fetched,
+and that the figures appear when they can. They serve the pages with the headers from
+`site/_headers`, fail on any Content-Security-Policy violation, and check that markup in the
+data files is never run and that CSV downloads cannot carry spreadsheet formulas.
+
+Install the test dependencies with `python -m pip install -r requirements-dev.txt` and
+`npm ci --prefix tests/browser && tests/browser/node_modules/.bin/playwright install chromium`.
+
+## Search engines
+
+The explanatory text, method and glossary are in the HTML itself; only the figures, charts
+and tables wait for the data. `site/robots.txt` and `site/sitemap.xml` point crawlers at the
+page, the head carries a canonical link, Open Graph tags and schema.org `Dataset` data, and
+`/data/*.json` responses send `X-Robots-Tag: noindex` so crawlers can fetch them to render the
+page without listing them as results. The public address is written in `index.html` (canonical,
+`og:url`, JSON-LD, citation), `config.js`, `robots.txt` and `sitemap.xml`;
+`tests/seo.test.mjs` fails if they disagree, so change them together when the site moves to its
+final domain.
+
+## Security
+
+- `site/_headers` sends a strict Content-Security-Policy with every page (scripts only from
+  the site plus one hashed inline script, no third-party anything, no framing) and the usual
+  hardening headers. If you change the inline theme script in `index.html` and `404.html`,
+  update its hash there; `tests/security.test.mjs` fails until it matches.
+- Cloudflare does not apply `_headers` to Pages Functions, so `/data/*` and `/api/waitlist`
+  set their own `nosniff` and CSP headers.
+- The waitlist accepts only same-origin JSON bodies of at most 2 KB, validates both fields
+  and stores them with bound SQL parameters. Its response does not reveal whether an
+  address was already on the list.
+- Everything from the data files is escaped before it reaches the page, and prices that are
+  not numbers are shown as a dash.
+- The workflows pin every action to a commit SHA, do not keep the git token after checkout,
+  and pass the Cloudflare token only to the two steps that need it.
+- Dependabot (`.github/dependabot.yml`) proposes weekly updates to those actions and to the
+  test-only dependencies in `requirements-dev.txt` and `tests/browser/package.json`, once a
+  release is a week old.
 
 ## One-time setup
 

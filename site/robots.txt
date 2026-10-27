@@ -1,0 +1,4 @@
+User-agent: *
+Disallow: /api/
+
+Sitemap: https://nordic-balancing-watch.pages.dev/sitemap.xml

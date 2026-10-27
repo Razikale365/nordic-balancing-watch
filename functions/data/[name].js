@@ -2,11 +2,19 @@
 // `data` branch, so new data needs no redeploy. Cached at the edge for five minutes.
 const FILES = new Set(["summary.json", "revisions.json"]);
 const TTL = 300;
+// Crawlers may fetch the files (search engines need them to render the page) but should not
+// list them as search results of their own. Function responses do not get the headers in
+// site/_headers, so the security headers are set here too.
+const NOINDEX = {
+  "x-robots-tag": "noindex",
+  "x-content-type-options": "nosniff",
+  "content-security-policy": "default-src 'none'; frame-ancestors 'none'"
+};
 
 function json(body, status) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json", "cache-control": "no-store" }
+    headers: { "content-type": "application/json", "cache-control": "no-store", ...NOINDEX }
   });
 }
 
@@ -39,7 +47,7 @@ export async function onRequestGet({ request, env, params }) {
   }
   return new Response(text, {
     status: 200,
-    headers: { "content-type": "application/json", "cache-control": `public, max-age=${TTL}` }
+    headers: { "content-type": "application/json", "cache-control": `public, max-age=${TTL}`, ...NOINDEX }
   });
 }
 

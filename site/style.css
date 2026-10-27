@@ -118,6 +118,8 @@ code { font-family: var(--mono); font-size: 0.9em; }
   background: var(--surface); border-radius: 6px; z-index: 100;
 }
 .skip:focus { left: 8px; }
+/* Classes that set display (.btn, .grid-2, .card...) would otherwise override the attribute. */
+[hidden] { display: none !important; }
 .visually-hidden {
   position: absolute; width: 1px; height: 1px; overflow: hidden;
   clip: rect(0 0 0 0); white-space: nowrap;
@@ -518,6 +520,10 @@ td .muted, .muted { color: var(--muted); }
 #stale-banner { background: var(--warn-bg); color: var(--warn-ink); padding: 10px 0; font-size: 14px; }
 #stale-banner[hidden] { display: none; }
 
+.data-notice {
+  margin: 22px 0 0; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); color: var(--ink-2); font-size: 15px;
+}
 .empty-state { padding: 80px 0; text-align: center; }
 .empty-state h2 { font-size: 22px; }
 .empty-state p { color: var(--ink-2); margin-top: 8px; }

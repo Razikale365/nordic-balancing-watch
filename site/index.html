@@ -3,10 +3,40 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Nordic Balancing Watch</title>
+  <title>When Nordic balancing prices appear and change · Nordic Balancing Watch</title>
   <meta name="description" content="An independent record of when Nordic imbalance and reserve prices are first published, and every change made to them afterwards.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231c5cab'/%3E%3Cpath d='M7 21h4l3-9 4 13 3-8h4' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <!-- The public address appears here, in og:url, the JSON-LD below, config.js, robots.txt and
+       sitemap.xml; tests/seo.test.mjs checks that they all agree. -->
+  <link rel="canonical" href="https://nordic-balancing-watch.pages.dev/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Nordic Balancing Watch">
+  <meta property="og:title" content="When Nordic balancing prices appear, and how often they change">
+  <meta property="og:description" content="An independent record of when Nordic imbalance and reserve prices are first published, and every change made to them afterwards.">
+  <meta property="og:url" content="https://nordic-balancing-watch.pages.dev/">
+  <meta property="og:locale" content="en_GB">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Dataset",
+    "name": "Nordic Balancing Watch: publication times and revisions of Nordic balancing prices",
+    "description": "When Nordic imbalance prices and reserve capacity prices are first seen on eSett, ENTSO-E and the national grid operators' open-data sites, and every later change to them. Imbalance prices are checked every 15 minutes and reserve capacity prices every hour. The public files hold rolling 7-day statistics per price zone and source, and the newest 500 recorded price changes.",
+    "url": "https://nordic-balancing-watch.pages.dev/",
+    "isAccessibleForFree": true,
+    "keywords": ["imbalance price", "reserve capacity", "price revisions", "eSett", "ENTSO-E", "Nordic electricity market"],
+    "spatialCoverage": { "@type": "Place", "name": "Denmark, Finland, Norway and Sweden" },
+    "temporalCoverage": "2026-10-24/..",
+    "measurementTechnique": "A price counts as published at the first check that returns it with a value; any later change or withdrawal is logged as a revision.",
+    "distribution": [
+      { "@type": "DataDownload", "name": "summary.json", "encodingFormat": "application/json",
+        "contentUrl": "https://nordic-balancing-watch.pages.dev/data/summary.json" },
+      { "@type": "DataDownload", "name": "revisions.json", "encodingFormat": "application/json",
+        "contentUrl": "https://nordic-balancing-watch.pages.dev/data/revisions.json" }
+    ]
+  }
+  </script>
   <script>try { var t = JSON.parse(localStorage.getItem("nbw.theme")); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}</script>
   <script src="config.js" defer></script>
   <script src="app.js" defer></script>
@@ -52,14 +82,9 @@
   <main id="main">
     <div class="wrap" id="top">
 
-      <section class="empty-state" id="empty-state" hidden>
-        <h2>Data is not published yet</h2>
-        <p>The collector has not produced a data file this site can read yet. Check back shortly.</p>
-      </section>
-
-      <div id="content" hidden>
+      <div id="content">
         <section class="hero" aria-labelledby="hero-h">
-          <p class="eyebrow"><span class="live-dot" id="live-dot" aria-hidden="true"></span>
+          <p class="eyebrow" data-needs-data hidden><span class="live-dot" id="live-dot" aria-hidden="true"></span>
             <span id="status-line">Live</span></p>
           <div class="hero-top">
             <h1 id="hero-h">When Nordic balancing prices appear, and how often they change</h1>
@@ -91,10 +116,18 @@
             </div>
           </div>
 
-          <p class="sample-note" id="sample-note" role="note"></p>
-          <dl class="stats" id="stats"></dl>
+          <noscript><p class="data-notice">The live figures, charts and tables on this page need
+            JavaScript. The explanations, method and glossary below do not, and the data files
+            (<a href="/data/summary.json">summary.json</a>, <a href="/data/revisions.json">revisions.json</a>)
+            can be downloaded directly.</p></noscript>
+          <p class="data-notice" id="empty-state" role="status" hidden>The latest figures could not
+            be loaded, so the charts and tables are not shown. Check back shortly. The explanations,
+            method and glossary on this page do not depend on them.</p>
 
-          <div class="findings" aria-labelledby="findings-h">
+          <p class="sample-note" id="sample-note" role="note" data-needs-data hidden></p>
+          <dl class="stats" id="stats" data-needs-data hidden></dl>
+
+          <div class="findings" aria-labelledby="findings-h" data-needs-data hidden>
             <h2 id="findings-h">What the data shows, <span data-window>last 7 days</span></h2>
             <ol id="findings"></ol>
           </div>
@@ -107,7 +140,7 @@
             <p>The newest 15-minute interval each source has a price for, and how long ago that
               interval ended. Refreshed every 15 minutes.</p>
           </div>
-          <div class="grid-2 now-grid">
+          <div class="grid-2 now-grid" data-needs-data hidden>
             <article class="card" aria-labelledby="board-h">
               <div class="card-head"><h3 id="board-h">Price board</h3>
                 <span class="muted small" id="board-asof"></span></div>
@@ -133,7 +166,7 @@
               <span class="term" data-term="tso">TSO</span>&rsquo;s site, each at its own pace.</p>
           </div>
 
-          <div class="grid-2">
+          <div class="grid-2" data-needs-data hidden>
             <article class="card" aria-labelledby="delay-h">
               <div class="card-head">
                 <h3 id="delay-h">Minutes until the first price appears</h3>
@@ -165,7 +198,7 @@
             </article>
           </div>
 
-          <article class="card" aria-labelledby="zones-h">
+          <article class="card" aria-labelledby="zones-h" data-needs-data hidden>
             <div class="card-head">
               <h3 id="zones-h">By zone and source</h3>
             </div>
@@ -187,7 +220,7 @@
               appears hours or days ahead, and can change when a later auction clears.</p>
           </div>
 
-          <article class="card" aria-labelledby="lead-h">
+          <article class="card" aria-labelledby="lead-h" data-needs-data hidden>
             <div class="card-head">
               <h3 id="lead-h">Hours before delivery the first price appears</h3>
             </div>
@@ -197,7 +230,7 @@
             <p class="note" id="lead-pending"></p>
           </article>
 
-          <article class="card" aria-labelledby="restab-h">
+          <article class="card" aria-labelledby="restab-h" data-needs-data hidden>
             <div class="card-head">
               <h3 id="restab-h">By product and zone</h3>
             </div>
@@ -213,7 +246,7 @@
               change and the price it changed to. An interval revised twice appears twice. A <span class="term" data-term="withdrawn">withdrawal</span>
               is a price that disappeared. Gaps filled in before a price was published are not listed.</p>
           </div>
-          <article class="card" aria-label="Revision log">
+          <article class="card" aria-label="Revision log" data-needs-data hidden>
             <div class="card-head"><h3 id="hist-h">Revisions per hour</h3></div>
             <p class="sub">Each bar is one hour. Each source has its own scale, so a large batch of
               reserve re-pricings does not hide the hourly pattern.</p>
@@ -295,8 +328,8 @@
             <h3 id="cite-h">Citing and the full record</h3>
             <p class="sub">Every version seen since collection started is kept, not only the last
               7 days. A versioned public archive with a DOI is planned; until then, please cite:</p>
-            <pre class="cite" id="cite-text"></pre>
-            <p class="downloads"><button type="button" class="btn" id="cite-copy">Copy citation</button>
+            <pre class="cite" id="cite-text">Nordic Balancing Watch. Publication times and revisions of Nordic imbalance and reserve capacity prices, collected since 24 October 2026. https://nordic-balancing-watch.pages.dev/</pre>
+            <p class="downloads"><button type="button" class="btn" id="cite-copy" hidden>Copy citation</button>
               <span class="muted small" id="cite-msg" role="status"></span></p>
             <p class="sub">Sources, polling and the publication-time rule are the open-source
               <a href="https://github.com/Razikale365/nordic-balancing" rel="noopener">nordic-balancing</a>
@@ -307,7 +340,40 @@
 
         <article class="card" aria-labelledby="glossary-h">
           <h3 id="glossary-h">Glossary</h3>
-          <dl class="glossary" id="glossary"></dl>
+          <dl class="glossary" id="glossary">
+            <div id="g-imbalance"><dt>Imbalance price</dt>
+              <dd>The price paid or received, per megawatt-hour, by companies whose actual production or use differed from what they planned. Set separately for every 15 minutes and every price zone, after the fact.</dd></div>
+            <div id="g-interval"><dt>Settlement interval</dt>
+              <dd>The 15-minute block that every imbalance price belongs to. Since 2023 the Nordic market settles in quarter-hours.</dd></div>
+            <div id="g-zone"><dt>Price zone (bidding zone)</dt>
+              <dd>An area with one price. Denmark has DK1 (west) and DK2 (east); Finland is one zone (FI); Norway has NO1–NO5 (NO1 Oslo, NO2 south, NO3 middle, NO4 north, NO5 west); Sweden has SE1–SE4 from north to south.</dd></div>
+            <div id="g-esett"><dt>eSett</dt>
+              <dd>The company that runs the joint imbalance settlement for Denmark, Finland, Norway and Sweden, owned by the national grid operators. Its figures are the ones the money is settled on.</dd></div>
+            <div id="g-entsoe"><dt>ENTSO-E</dt>
+              <dd>The association of European grid operators. Its Transparency Platform republishes market data from every member country.</dd></div>
+            <div id="g-tso"><dt>TSO (national grid operator)</dt>
+              <dd>Energinet in Denmark, Fingrid in Finland, Statnett in Norway and Svenska kraftnät in Sweden. Energinet and Fingrid publish imbalance prices on their own open-data sites.</dd></div>
+            <div id="g-brp"><dt>Balance responsible party</dt>
+              <dd>A company that has taken on the financial responsibility for a group of producers or consumers being in balance. It pays or receives the imbalance price.</dd></div>
+            <div id="g-median"><dt>Median</dt>
+              <dd>The middle value: half of the intervals were faster, half slower. A good picture of a typical day.</dd></div>
+            <div id="g-p95"><dt>95th percentile</dt>
+              <dd>95 out of 100 intervals were first seen by this time; only 1 in 20 took longer. A picture of a bad day.</dd></div>
+            <div id="g-revision"><dt>Revision</dt>
+              <dd>Any change to a price after it was first published.</dd></div>
+            <div id="g-withdrawn"><dt>Withdrawal</dt>
+              <dd>A price that was published and later disappeared from the source.</dd></div>
+            <div id="g-reserve"><dt>Reserve capacity</dt>
+              <dd>Payment for being ready to raise or lower power at short notice. The grid operator buys it ahead of time and calls on it when needed.</dd></div>
+            <div id="g-fcr"><dt>FCR-N and FCR-D</dt>
+              <dd>Frequency containment reserves: the fastest reserves, reacting within seconds. FCR-N handles normal small swings, FCR-D (up and down) disturbances such as a power plant tripping.</dd></div>
+            <div id="g-afrr"><dt>aFRR</dt>
+              <dd>Automatic frequency restoration reserve: brings the frequency back to 50 Hz within minutes, on an automatic signal.</dd></div>
+            <div id="g-mfrr"><dt>mFRR</dt>
+              <dd>Manual frequency restoration reserve: slower reserves activated on request, within about 15 minutes.</dd></div>
+            <div id="g-auction"><dt>D-2 and D-1 auctions</dt>
+              <dd>Reserve capacity is bought two days (D-2) and one day (D-1) before delivery. A price published after the first auction can change when the next one clears.</dd></div>
+          </dl>
         </article>
       </section>
 
