@@ -90,13 +90,27 @@
           price from Energi Data Service was revised. They are now reported separately as currency
           recalculations.</p>
 
+        <h4>5. Finnish eSett prices first published as 0.00</h4>
+        <p>About two hours after an interval ends, eSett publishes the Finnish imbalance price as
+          0.00. Roughly an hour later it replaces that with the settled price. Fingrid and ENTSO-E
+          have the settled price from the start. Each 0.00 was counted as eSett's first
+          publication and the settled price as a revision: 176 of the 178 Finnish eSett revisions
+          up to 28 October 2026, 19:11 UTC. Sweden, Norway and Denmark show no such rows.</p>
+        <p>These 0.00 rows are now marked as they are replaced, every 15 minutes. A 0.00 is
+          marked only when eSett later replaced it and Fingrid never showed 0.00 for that
+          interval, so a real price of 0.00 (76 in the collected data, matched by Fingrid and ENTSO-E) stays.</p>
+        <p>Two of the Finnish changes are genuine corrections and stay as revisions: 25 October
+          2026, 00:00 UTC, from &minus;15.77 to &minus;2.35 (first in Fingrid, then ENTSO-E, then
+          eSett), and 16 October 2026, 02:45 UTC, from &minus;79.60 to &minus;1.00 (eSett and
+          ENTSO-E).</p>
+
         <h4>What now prevents a repeat</h4>
         <ul>
           <li>A value counts as withdrawn only when two successful checks in a row miss it.</li>
           <li>A zone missing from an otherwise successful answer is never read as withdrawals.</li>
           <li>Every check records the version of nordic-balancing that read it.</li>
-          <li>For DK1 and DK2, every distinct row the source sent is kept, so a reading can be
-            checked against the original.</li>
+          <li>For DK1, DK2 and Finnish eSett rows, every distinct row the source sent is kept, so
+            a reading can be checked against the original.</li>
           <li>A fix to nordic-balancing is checked against the collected data and applied to the
             collector the same day.</li>
           <li>Automated tests cover each case above.</li>
