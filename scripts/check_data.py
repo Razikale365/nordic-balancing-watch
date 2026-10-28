@@ -69,6 +69,9 @@ def check_last7(l, where, errors):
     for k in ("n", "excluded", "published", "revised", "revisions", "withdrawn"):
         if not is_nonneg_int(l.get(k)):
             errors.append(f"{where}: last7.{k} must be a non-negative integer")
+    # Added 2026-10-28; older data files do not have it.
+    if "currency_recalculations" in l and not is_nonneg_int(l["currency_recalculations"]):
+        errors.append(f"{where}: last7.currency_recalculations must be a non-negative integer")
     for k in ("p50", "p95", "max", "lag_p50_h", "lag_max_h"):
         if l.get(k) is not None and not is_num(l.get(k)):
             errors.append(f"{where}: last7.{k} must be a number or null")

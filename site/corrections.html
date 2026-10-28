@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Corrections · Nordic Balancing Watch</title>
+  <meta name="description" content="Every correction to the figures published by Nordic Balancing Watch: what was wrong, which figures it affected, how it was corrected and what now prevents it.">
+  <link rel="canonical" href="https://nordic-balancing-watch.pages.dev/corrections">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script>try { var t = JSON.parse(localStorage.getItem("nbw.theme")); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}</script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap">
+      <a class="brand" href="/" aria-label="Nordic Balancing Watch, home">
+        <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--accent)"/><path d="M7 21h4l3-9 4 13 3-8h4" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Nordic Balancing Watch</span>
+      </a>
+    </div>
+  </header>
+  <main class="wrap" id="main">
+    <section class="section" aria-labelledby="corr-h">
+      <div class="section-head">
+        <span class="kicker">Corrections</span>
+        <h2 id="corr-h">Changes to published figures</h2>
+        <p>Every correction to the figures on this site: what was wrong, which figures it affected,
+          how it was corrected and what now prevents it. Collected values are never edited or
+          deleted. A value found to come from a collection fault is marked with the reason and
+          left out of the figures.</p>
+      </div>
+
+      <article class="card" aria-labelledby="c1-h">
+        <h3 id="c1-h">28 October 2026: revision counts, withdrawals and Danish placeholders</h3>
+        <p class="sub">Period affected: start of collection (24 October 2026, 07:34 UTC) to
+          28 October 2026, 16:40 UTC. Figures were recomputed on 28 October 2026.</p>
+
+        <h4>1. Revision counts included changes to non-price fields</h4>
+        <p>The summary counted a row as revised whenever any stored field changed, such as
+          satisfied demand, a direction or a capacity volume, not only when a price changed.
+          This affected the revision counts and the share of prices changed later. The revision
+          log was not affected: it always compared prices.</p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th scope="col"><span class="th-pad">Series</span></th><th scope="col"><span class="th-pad">Stored changes</span></th><th scope="col"><span class="th-pad">Moved no price</span></th></tr></thead>
+            <tbody>
+              <tr><td>eSett imbalance, all zones</td><td>5,215</td><td>5,041</td></tr>
+              <tr><td>Energi Data Service imbalance, DK1 and DK2</td><td>1,092</td><td>824</td></tr>
+              <tr><td>Energi Data Service FCR-D</td><td>3,868</td><td>528</td></tr>
+              <tr><td>Energi Data Service FCR-N</td><td>1,936</td><td>36</td></tr>
+              <tr><td>Fingrid imbalance</td><td>15</td><td>14</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Now a change counts as a revision only if a euro price differs from its previous value.</p>
+
+        <h4>2. Withdrawals that were not withdrawals</h4>
+        <p>No source withdrew a published value in this period, but two collection faults recorded
+          withdrawals:</p>
+        <ul>
+          <li>On 26 October 2026 at 10:30 UTC, ENTSO-E answered one request without any NO2 rows.
+            The collector read the empty zone as 189 withdrawn values, which came back at the next
+            check.</li>
+          <li>The daily eSett query lost the interval on a 31-day query boundary when the window
+            started a few seconds past the quarter hour, a fault in nordic-balancing 1.0.0rc1 fixed
+            in 1.0.0rc2. Each day this recorded 12 withdrawals, one per zone, re-added the next day:
+            48 in all.</li>
+        </ul>
+        <p>The 189 ENTSO-E entries and 36 eSett entries are marked. The last 12 eSett entries are
+          marked once their interval is returned again; the rule requires the same interval to
+          come back, so a real withdrawal stays visible.</p>
+
+        <h4>3. Danish eSett placeholders read as prices</h4>
+        <p>Shortly after each interval, eSett publishes a provisional row for DK1 and DK2 with
+          every price at 0.00 before the real price. nordic-balancing 1.0.0rc1 treated such a row as
+          not yet published only when its direction was 0, so placeholders with an up or down
+          direction were read as a settled price of 0.00. It also hid three real settled prices of
+          0.00 (DK1, 25 October 2026, 01:15 to 01:45 UTC, when the spot price was also 0.00).</p>
+        <p>For 132 Danish intervals the eSett first-publication time was too early and the real
+          price was counted as a revision. nordic-balancing 1.0.0rc3 recognises the placeholder by
+          its non-zero spot difference (<code>imblSpotDifferencePrice</code>), checked against every
+          Danish row from 2025 to October 2026 and against Energi Data Service. The collector
+          switched to it on 28 October 2026 at 16:17 UTC; the 132 placeholders, and 2 rows re-read
+          at the switch, are marked.</p>
+
+        <h4>4. Danish-krone recalculations counted as revisions</h4>
+        <p>Energi Data Service recalculates its Danish-krone imbalance price from the euro price
+          once a day, around 16:30 UTC, moving it by a few øre while the euro price stays the same.
+          These 268 recalculations (125 DK1, 143 DK2) were counted as revisions. No euro imbalance
+          price from Energi Data Service was revised. They are now reported separately as currency
+          recalculations.</p>
+
+        <h4>What now prevents a repeat</h4>
+        <ul>
+          <li>A value counts as withdrawn only when two successful checks in a row miss it.</li>
+          <li>A zone missing from an otherwise successful answer is never read as withdrawals.</li>
+          <li>Every check records the version of nordic-balancing that read it.</li>
+          <li>For DK1 and DK2, every distinct row the source sent is kept, so a reading can be
+            checked against the original.</li>
+          <li>A fix to nordic-balancing is checked against the collected data and applied to the
+            collector the same day.</li>
+          <li>Automated tests cover each case above.</li>
+        </ul>
+      </article>
+      <p style="margin-top:20px"><a class="btn" href="/" style="text-decoration:none">Back to the figures</a></p>
+    </section>
+  </main>
+</body>
+</html>

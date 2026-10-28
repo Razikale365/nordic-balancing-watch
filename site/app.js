@@ -728,6 +728,11 @@
       el.textContent = capped ? "The log keeps only the newest " + fmtInt(logged) + " entries, back to " + dateTime(oldest) + " " + tzName(oldest) +
         ", while " + fmtInt(counted) + " changes were counted in the window. The revision log, its CSV and the charts built from it cover only those entries." : "";
     });
+    var currency = sum((s.groups || []).map(function (g) { return (g.last7 && g.last7.currency_recalculations) || 0; }));
+    document.querySelectorAll("[data-currency]").forEach(function (el) {
+      el.textContent = currency ? "Energi Data Service also recalculated its Danish-krone price " + fmtInt(currency) +
+        (currency === 1 ? " time" : " times") + " in the window with the euro price unchanged. Those currency recalculations are not revisions and are not in the log." : "";
+    });
     $("coverage-note").textContent = !c.since ? "The data does not say when collection started, so how much of the window is filled is unknown."
       : c.full ? "Collection started on " + since + "; the 7-day window is full."
       : "Collection started on " + since + ". The current data covers " + c.span + ", so the 7-day window is not yet full and every figure on this page comes from that shorter sample.";

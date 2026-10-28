@@ -8,6 +8,7 @@ const SITE = "https://nordic-balancing-watch.pages.dev/";
 const read = (path) => readFileSync(new URL(`../site/${path}`, import.meta.url), "utf8");
 const index = read("index.html");
 const notFound = read("404.html");
+const corrections = read("corrections.html");
 
 const VOID = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]);
 
@@ -95,7 +96,7 @@ test("the public address is the same everywhere it is written", () => {
   assert.equal(config, SITE);
   assert.match(read("robots.txt"), new RegExp(`^Sitemap: ${SITE}sitemap\\.xml$`, "m"));
   const locs = [...read("sitemap.xml").matchAll(/<loc>([^<]*)<\/loc>/g)].map((m) => m[1]);
-  assert.deepEqual(locs, [SITE]);
+  assert.deepEqual(locs, [SITE, `${SITE}corrections`]);
   assert.ok(byId(doc, "cite-text").text.trim().endsWith(SITE));
 });
 
@@ -198,5 +199,12 @@ test("the 404 page is not indexed and links home", () => {
 
 test("both pages use the favicon file", () => {
   assert.match(read("favicon.svg"), /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
-  for (const html of [index, notFound]) assert.match(html, /<link rel="icon" href="\/favicon\.svg" type="image\/svg\+xml">/);
+  for (const html of [index, notFound, corrections]) assert.match(html, /<link rel="icon" href="\/favicon\.svg" type="image\/svg\+xml">/);
+});
+
+test("the corrections page is indexed, canonical and linked from the home page", () => {
+  assert.doesNotMatch(corrections, /name="robots"/);
+  assert.match(corrections, new RegExp(`<link rel="canonical" href="${SITE}corrections">`));
+  assert.match(corrections, /<a [^>]*href="\/"/);
+  assert.match(index, /<a href="\/corrections">/);
 });

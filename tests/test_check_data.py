@@ -60,6 +60,14 @@ def test_bad_latest_price_fails(tmp_path):
     assert "now[0]: price" in res.stderr
 
 
+def test_bad_currency_recalculation_count_fails(tmp_path):
+    def breakit(s):
+        s["groups"][0]["last7"]["currency_recalculations"] = -1
+    res = run_check(make_dir(tmp_path, summary=breakit))
+    assert res.returncode != 0
+    assert "currency_recalculations" in res.stderr
+
+
 def test_missing_required_key_fails(tmp_path):
     def breakit(r):
         del r["revisions"][0]["revised_at"]

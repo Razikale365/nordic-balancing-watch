@@ -194,6 +194,7 @@
               <p class="sub">Imbalance price changes logged in the <span data-window>last 7 days</span>, and how many replaced a
                 value of exactly 0.00.</p>
               <p class="note" data-revcap></p>
+            <p class="note" data-currency></p>
               <div class="chart" id="size-chart" role="img" aria-labelledby="size-h"></div>
             </article>
           </div>
@@ -253,6 +254,7 @@
             <div class="legend" id="hist-legend"></div>
             <div class="chart" id="hist-chart" role="img" aria-labelledby="hist-h"></div>
             <p class="note" data-revcap></p>
+            <p class="note" data-currency></p>
             <div id="rev-table"></div>
           </article>
         </section>
@@ -293,9 +295,16 @@
           </article>
           <article class="card">
             <h3>Revisions</h3>
-            <p>Any change to a published value is a revision, and so is a value that disappears.
-              The log keeps the earlier and the new price. Nothing is smoothed or corrected, and a
+            <p>A revision is a change to a published price in euros, or a price that disappears
+              and is still missing at the next check. Changes to other fields, such as demand or
+              direction, are not revisions. The log keeps the earlier and the new price, and a
               0.00 is shown as published.</p>
+            <p>Energi Data Service recalculates its Danish-krone price from the euro price once a
+              day. A change in the krone price alone is counted separately as a currency
+              recalculation, not as a revision.</p>
+            <p>Collected values are never edited or deleted. A value later found to be produced by
+              a collection fault is marked and left out of the figures, and listed under
+              <a href="/corrections">corrections</a>.</p>
           </article>
         </div>
 
@@ -315,7 +324,8 @@
                   <tr><td><code>groups[].last7.p50</code>, <code>p95</code></td><td>Minutes from the end of the interval to the first price (negative: before delivery), median and 95th percentile</td></tr>
                   <tr><td><code>last7.n</code>, <code>excluded</code></td><td>Intervals measured, and first sightings left out (no reliable publication time)</td></tr>
                   <tr><td><code>last7.published</code>, <code>revised</code>, <code>revised_share</code></td><td>Measured prices, how many changed later, and the share</td></tr>
-                  <tr><td><code>last7.revisions</code>, <code>withdrawn</code>, <code>lag_p50_h</code></td><td>Changes in the period, of which withdrawals, and the median hours from first price to change</td></tr>
+                  <tr><td><code>last7.revisions</code>, <code>withdrawn</code>, <code>lag_p50_h</code></td><td>Price changes in the period, of which withdrawals, and the median hours from first price to change</td></tr>
+                  <tr><td><code>last7.currency_recalculations</code></td><td>Changes to the Danish-krone price alone, the euro price unchanged (not counted as revisions)</td></tr>
                   <tr><td><code>groups[].daily[]</code></td><td>The same figures per closed UTC day, up to 30 days</td></tr>
                   <tr><td><code>now[]</code></td><td>Latest priced interval per source and zone, with price and minutes since it ended</td></tr>
                   <tr><td><code>revisions[]</code></td><td>One change: interval, field and unit, old and new value, first published and revised times (UTC)</td></tr>
@@ -439,6 +449,7 @@
         <p>Not affiliated with any of these organisations. Price data belongs to its providers.</p>
         <p>Built on the open-source <a href="https://pypi.org/project/nordic-balancing/" rel="noopener">nordic-balancing</a>
           library (<a href="https://github.com/Razikale365/nordic-balancing" rel="noopener">GitHub</a>)<span id="collector-link"></span>.</p>
+        <p><a href="/corrections">Corrections</a>: every change to published figures, and why.</p>
       </div>
     </div>
   </footer>
