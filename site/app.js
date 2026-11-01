@@ -347,11 +347,15 @@
     var plotH = H - T - B, colW = (W - L - R) / buckets.length;
     var grid = "", ticks = "", body = "", tips = [];
     var barW = Math.max(1, colW - (colW > 4 ? 1.5 : 0.5));
+    /* Hour labels between the day labels, as often as the width allows (every 3, 6 or 12 hours). */
+    var hourStep = opt.hourTicks ? [3, 6, 12].filter(function (h) { return h * colW >= 44; })[0] : null;
     buckets.forEach(function (b, i) {
       var x0 = L + i * colW, base = T + plotH;
       if (b.dayLabel) {
         if (opt.axis !== false) ticks += '<text x="' + (x0 + 3) + '" y="' + (H - 6) + '">' + esc(b.dayLabel) + "</text>";
         grid += '<line x1="' + x0 + '" x2="' + x0 + '" y1="' + T + '" y2="' + (T + plotH) + '"/>';
+      } else if (hourStep && b.hourLabel && b.hour % hourStep === 0 && opt.axis !== false) {
+        ticks += '<text class="hour" x="' + (x0 + 3) + '" y="' + (H - 6) + '">' + esc(b.hourLabel) + "</text>";
       }
       cats.forEach(function (c) {
         var n = b.counts[c] || 0;
@@ -1037,8 +1041,9 @@
       var hour = +fmtTime(iso, { hour: "2-digit", hourCycle: "h23" });
       index[t] = buckets.length;
       buckets.push({
-        counts: {}, title: dateTime(iso) + " " + tzName(iso),
-        dayLabel: hour === 0 ? fmtTime(iso, { day: "numeric", month: "short" }) : ""
+        counts: {}, title: dateTime(iso) + " " + tzName(iso), hour: hour,
+        dayLabel: hour === 0 ? fmtTime(iso, { day: "numeric", month: "short" }) : "",
+        hourLabel: fmtTime(iso, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
       });
     }
     revs.forEach(function (r) {
@@ -1055,7 +1060,7 @@
         '</span><span class="muted">up to ' + fmtInt(top) + ' per hour</span></div><div class="strip-plot" data-strip="' + i + '"></div></div>';
     }).join("");
     cats.forEach(function (c, i) {
-      stackedColumns(el.querySelector('[data-strip="' + i + '"]'), buckets, [c], { height: 64, axis: i === cats.length - 1 });
+      stackedColumns(el.querySelector('[data-strip="' + i + '"]'), buckets, [c], { height: 64, axis: i === cats.length - 1, hourTicks: true });
     });
   }
 
