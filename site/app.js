@@ -340,12 +340,20 @@
 
   /* Columns per time bucket (stacked when given several categories, 2px surface gap). */
   function stackedColumns(el, buckets, cats, opt) {
-    var W = Math.max(200, el.clientWidth), L = 4, R = 4, T = 4, B = opt.axis === false ? 4 : 22, GAP = 2;
+    var W = Math.max(200, el.clientWidth), L = 36, R = 4, T = 8, B = opt.axis === false ? 4 : 22, GAP = 2;
     var H = (opt.height || 150) + B;
     var totals = buckets.map(function (b) { return sum(cats.map(function (c) { return b.counts[c] || 0; })); });
-    var ymax = Math.max.apply(null, totals.concat([1]));
+    /* Counts are whole numbers: the y axis steps by at least 1 and ends on a round value. */
+    var step = Math.max(1, niceStep(Math.max.apply(null, totals.concat([1])), opt.height >= 100 ? 4 : 2));
+    var ymax = Math.ceil(Math.max.apply(null, totals.concat([1])) / step) * step;
     var plotH = H - T - B, colW = (W - L - R) / buckets.length;
     var grid = "", ticks = "", body = "", tips = [];
+    for (var v = step; v <= ymax; v += step) {
+      var gy = T + plotH - v / ymax * plotH;
+      grid += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + gy + '" y2="' + gy + '"/>';
+      ticks += '<text x="' + (L - 6) + '" y="' + (gy + 4) + '" text-anchor="end">' + fmtInt(v) + "</text>";
+    }
+    ticks += '<text x="' + (L - 6) + '" y="' + (T + plotH + 4) + '" text-anchor="end">0</text>';
     var barW = Math.max(1, colW - (colW > 4 ? 1.5 : 0.5));
     /* Hour labels between the day labels, as often as the width allows (every 3, 6 or 12 hours). */
     var hourStep = opt.hourTicks ? [3, 6, 12].filter(function (h) { return h * colW >= 44; })[0] : null;
@@ -1057,10 +1065,12 @@
     el.innerHTML = cats.map(function (c, i) {
       var top = Math.max.apply(null, buckets.map(function (b) { return b.counts[c] || 0; }));
       return '<div class="strip"><div class="strip-label"><span class="src">' + swatch(c) + esc(CAT_LABEL[c]) +
-        '</span><span class="muted">up to ' + fmtInt(top) + ' per hour</span></div><div class="strip-plot" data-strip="' + i + '"></div></div>';
+        '</span><span class="muted">most in an hour: ' + fmtInt(top) + '</span></div><div class="strip-plot" data-strip="' + i + '"></div></div>';
     }).join("");
+    /* Fewer sources get taller strips, so a single source is not squeezed into a thin band. */
+    var height = cats.length === 1 ? 140 : cats.length === 2 ? 100 : 76;
     cats.forEach(function (c, i) {
-      stackedColumns(el.querySelector('[data-strip="' + i + '"]'), buckets, [c], { height: 64, axis: i === cats.length - 1, hourTicks: true });
+      stackedColumns(el.querySelector('[data-strip="' + i + '"]'), buckets, [c], { height: height, axis: i === cats.length - 1, hourTicks: true });
     });
   }
 
