@@ -205,6 +205,9 @@
             </div>
             <p class="sub">The numbers behind both charts. Sort, filter, reorder or hide columns, or
               download them as CSV.</p>
+            <p class="note">&ldquo;Changed later&rdquo; follows the prices first seen in the
+              <span data-window>last 7 days</span>. &ldquo;Changes seen&rdquo; counts every price change
+              recorded in that time, including changes to older intervals, so it can be higher.</p>
             <div id="zones-table"></div>
           </article>
         </section>
@@ -218,7 +221,8 @@
               <span class="term" data-term="fcr">FCR</span>, <span class="term" data-term="afrr">aFRR</span>
               and <span class="term" data-term="mfrr">mFRR</span>). That capacity is bought in
               <span class="term" data-term="auction">auctions</span> before delivery, so its price
-              appears hours or days ahead, and can change when a later auction clears.</p>
+              appears hours or days ahead, and can change when a later auction clears. A change
+              after delivery is a correction of data already published.</p>
           </div>
 
           <article class="card" aria-labelledby="lead-h" data-needs-data hidden>
@@ -235,6 +239,8 @@
             <div class="card-head">
               <h3 id="restab-h">By product and zone</h3>
             </div>
+            <p class="note">&ldquo;Price changes&rdquo; counts every change recorded in the
+              <span data-window>last 7 days</span>, including changes to delivery hours from before it.</p>
             <div id="reserve-table"></div>
           </article>
         </section>
@@ -326,8 +332,8 @@
                 <tbody>
                   <tr><td><code>groups[].last7.p50</code>, <code>p95</code></td><td>Minutes from the end of the interval to the first price (negative: before delivery), median and 95th percentile</td></tr>
                   <tr><td><code>last7.n</code>, <code>excluded</code></td><td>Intervals measured, and first sightings left out (no reliable publication time)</td></tr>
-                  <tr><td><code>last7.published</code>, <code>revised</code>, <code>revised_share</code></td><td>Measured prices, how many changed later, and the share</td></tr>
-                  <tr><td><code>last7.revisions</code>, <code>withdrawn</code>, <code>lag_p50_h</code></td><td>Price changes in the period, of which withdrawals, and the median hours from first price to change</td></tr>
+                  <tr><td><code>last7.published</code>, <code>revised</code>, <code>revised_share</code></td><td>Prices first seen in the period, how many of those changed later, and the share</td></tr>
+                  <tr><td><code>last7.revisions</code>, <code>withdrawn</code>, <code>lag_p50_h</code></td><td>Price changes seen in the period to any interval, including ones first seen before it (so <code>revisions</code> can exceed <code>revised</code>), of which withdrawals, and the median hours from first price to change</td></tr>
                   <tr><td><code>last7.currency_recalculations</code></td><td>Changes to the Danish-krone price alone, the euro price unchanged (not counted as revisions)</td></tr>
                   <tr><td><code>groups[].daily[]</code></td><td>The same figures per closed UTC day, up to 30 days</td></tr>
                   <tr><td><code>now[]</code></td><td>Latest priced interval per source and zone, with price and minutes since it ended</td></tr>

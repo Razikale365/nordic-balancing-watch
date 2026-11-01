@@ -837,7 +837,7 @@
       out.push(lead0 + ", the value replaced was <b>0.00</b> (" +
         fmtInt(zeros.length) + " of " + fmtInt(esRevs.length) + " changes in the log, " + esc(zz) + ").");
     }
-    var res = reserveGroups(s).filter(function (g) { return g.last7.revisions > 0; });
+    var res = reserveGroups(s).filter(function (g) { return g.last7.revisions > 0 && !changedAfterDelivery(g); });
     if (res.length) {
       var bySrc = {};
       res.forEach(function (g) { (bySrc[g.source] = bySrc[g.source] || []).push(g); });
@@ -1090,10 +1090,17 @@
             var v = g.last7.revised_share;
             return v == null ? "—" : '<span class="meter ' + shareTone(v) + '">' + fmtPct(v, 1) + '<span class="b"><i style="width:' + Math.max(v > 0 ? 4 : 0, Math.round(v * 100)) + '%"></i></span></span>';
           } },
-        { key: "revisions", label: "Changes", num: true, get: function (g) { return g.last7.revisions; }, html: function (g) { return fmtInt(g.last7.revisions); } },
+        { key: "revisions", label: "Changes seen", num: true, get: function (g) { return g.last7.revisions; }, html: function (g) { return fmtInt(g.last7.revisions); } },
         { key: "lag", label: "Typically after", csvLabel: "Typically changed after (h)", num: true, get: function (g) { return g.last7.lag_p50_h; }, html: function (g) { return fmtHours(g.last7.lag_p50_h); } }
       ]
     });
+  }
+
+  /* A capacity price changed later than it typically comes out ahead of delivery was changed
+     after delivery, so no later auction explains it: the operator corrected published data. */
+  function changedAfterDelivery(g) {
+    var lag = g.last7.lag_p50_h, lead = g.last7.p50 != null && g.last7.p50 < 0 ? -g.last7.p50 / 60 : null;
+    return lag != null && lead != null && lag > lead;
   }
 
   function renderLead(s) {
@@ -1127,9 +1134,14 @@
     revised.forEach(function (g) { (bySrc[g.source + "|" + g.data.split(" ")[0]] = bySrc[g.source + "|" + g.data.split(" ")[0]] || []).push(g); });
     $("lead-callout").innerHTML = Object.keys(bySrc).map(function (k) {
       var gs = bySrc[k], lag = median(gs.map(function (g) { return g.last7.lag_p50_h; }).filter(function (v) { return v != null; }));
-      return esc(SRC_LABEL[gs[0].source]) + " " + esc(k.split("|")[1]) + " (" + esc(zoneRange(gs.map(function (g) { return g.zone; }))) +
-        "): re-priced in <b>" + fmtInt(sum(gs.map(function (g) { return g.last7.revisions; }))) + " zone-quarter-hours</b>" +
-        (lag != null ? ", typically " + fmtHours(lag) + " after first publication" : "") + ".";
+      var n = fmtInt(sum(gs.map(function (g) { return g.last7.revisions; })));
+      var head = esc(SRC_LABEL[gs[0].source]) + " " + esc(k.split("|")[1]) + " (" + esc(zoneRange(gs.map(function (g) { return g.zone; }))) + "): ";
+      var after = lag != null ? ", typically " + fmtHours(lag) + " after first publication" : "";
+      if (gs.every(changedAfterDelivery)) {
+        return head + "<b>" + n + " zone-quarter-hours</b> changed" + after +
+          ". That is after delivery, so they are corrections of published data, not a later auction.";
+      }
+      return head + "re-priced in <b>" + n + " zone-quarter-hours</b>" + after + ".";
     }).join("<br>");
     var pending = {};
     res.forEach(function (g) {
@@ -1154,7 +1166,7 @@
         { key: "lead", label: "Median lead", csvLabel: "Median lead (h before delivery)", num: true, get: function (g) { return ahead(g.last7.p50); }, html: function (g) { return fmtHours(ahead(g.last7.p50)); } },
         { key: "lead95", label: "95% at least", csvLabel: "95% at least (h before delivery)", num: true, get: function (g) { return ahead(g.last7.p95); }, html: function (g) { return fmtHours(ahead(g.last7.p95)); } },
         { key: "n", label: "Hours", num: true, get: function (g) { return g.last7.n; }, html: function (g) { return fmtInt(g.last7.n); } },
-        { key: "revisions", label: "Re-pricings", num: true, get: function (g) { return g.last7.revisions; }, html: function (g) { return fmtInt(g.last7.revisions); } },
+        { key: "revisions", label: "Price changes", num: true, get: function (g) { return g.last7.revisions; }, html: function (g) { return fmtInt(g.last7.revisions); } },
         { key: "lag", label: "Typically after", csvLabel: "Typically after (h)", num: true, get: function (g) { return g.last7.lag_p50_h; }, html: function (g) { return fmtHours(g.last7.lag_p50_h); } }
       ]
     });
