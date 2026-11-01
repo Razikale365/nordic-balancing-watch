@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Validate a collector data directory against the site data contract (schema 1).
 
-Usage: check_data.py <directory containing summary.json and revisions.json>
-Exits 0 when both files are valid, 1 with one line per problem otherwise.
+Usage: check_data.py <directory containing summary.json, revisions.json and any zone-<zone>.json>
+Exits 0 when every file is valid, 1 with one line per problem otherwise.
 Stdlib only.
 """
 import json
@@ -16,6 +16,9 @@ DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 SOURCES = {"esett", "energidataservice", "entsoe", "fingrid", "svk"}
 FIELDS = {"imbalance_price_eur", "imbalance_price_dkk", "price_eur_per_mw"}
 KINDS = {"changed", "withdrawn"}
+# Optional per-zone detail files, one per price zone, the same names the data function allows.
+ZONE_FILE_RE = re.compile(r"^zone-(DK[12]|FI|NO[1-5]|SE[1-4])\.json$")
+ZONE_CONTEXT = ("direction", "mfrr_up", "mfrr_down")
 
 
 def is_num(x):
@@ -217,6 +220,45 @@ def check_revisions(data, errors):
             errors.append(f"{where}: changed entries must have a numeric new")
 
 
+def check_zone(data, name, errors):
+    """One zone's 7-day file: every source on one 15-minute grid starting at `start`."""
+    if data is None:
+        return
+    m = ZONE_FILE_RE.match(name)
+    if data.get("zone") != m.group(1):
+        errors.append(f"{name}: zone must be {m.group(1)!r}")
+    if not is_ts(data.get("start")):
+        errors.append(f"{name}: start must be an ISO timestamp ending in Z")
+    if data.get("interval_minutes") != 15:
+        errors.append(f"{name}: interval_minutes must be 15")
+    series = data.get("series")
+    if not isinstance(series, dict) or not series:
+        errors.append(f"{name}: series must be a non-empty object")
+        series = {}
+    arrays = {f"series.{s}": a for s, a in series.items()}
+    arrays.update({k: data.get(k) for k in ZONE_CONTEXT})
+    lengths = set()
+    for k, a in arrays.items():
+        if k.startswith("series.") and k[7:] not in SOURCES:
+            errors.append(f"{name}: unknown source {k[7:]!r}")
+        if not isinstance(a, list) or not all(v is None or is_num(v) for v in a):
+            errors.append(f"{name}: {k} must be a list of numbers or nulls")
+            continue
+        lengths.add(len(a))
+    if len(lengths) > 1:
+        errors.append(f"{name}: every list must have the same length")
+    n = lengths.pop() if len(lengths) == 1 else 0
+    revs = data.get("revisions")
+    if not isinstance(revs, list):
+        errors.append(f"{name}: revisions must be a list")
+        return
+    for i, r in enumerate(revs):
+        ok = (isinstance(r, list) and len(r) == 4 and is_int(r[0]) and 0 <= r[0] < n
+              and r[1] in series and is_num(r[2]) and is_ts(r[3]))
+        if not ok:
+            errors.append(f"{name}: revisions[{i}] must be [index, source, first price, first seen]")
+
+
 def check_dir(directory):
     """Return a list of problems found in the data directory (empty = valid)."""
     directory = Path(directory)
@@ -225,6 +267,11 @@ def check_dir(directory):
     revisions = check_file(directory / "revisions.json", errors)
     check_summary(summary, errors)
     check_revisions(revisions, errors)
+    for path in sorted(directory.glob("zone-*.json")):
+        if not ZONE_FILE_RE.match(path.name):
+            errors.append(f"{path.name}: not a price zone file name")
+            continue
+        check_zone(check_file(path, errors), path.name, errors)
     return errors
 
 

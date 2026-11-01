@@ -46,6 +46,44 @@ function poison(value, mode, key) {
 }
 
 for (const mode of ["strings", "numbers"]) {
+  test(`markup in a zone file is rejected or shown as text, never run (payload in ${mode})`, async () => {
+    const files = { "summary.json": fixture("summary.json"), "revisions.json": fixture("revisions.json"), "zone-SE3.json": poison(fixture("zone-SE3.json"), mode) };
+    const { page, close } = await openPage(browser, `${server.origin}/`, { route: serve(files), contextOptions: { bypassCSP: true } });
+    try {
+      await page.locator("#board .zd-open").first().click();
+      await page.locator("#zd[open]").waitFor();
+      await page.locator("#zd-chart .zd-hit, #zd-chart .empty-chart").first().waitFor();
+      const hit = page.locator("#zd-chart .zd-hit");
+      if (await hit.count()) await hit.hover();
+      await page.waitForTimeout(200);
+      assert.equal(await page.evaluate(() => window.__xss), undefined);
+      assert.equal(await page.locator('img[src="x"], svg[onload]').count(), 0);
+    } finally {
+      await close();
+    }
+  });
+}
+
+test("the zone panel opens from the board with every source, the direction and the revisions", async () => {
+  const files = { "summary.json": fixture("summary.json"), "revisions.json": fixture("revisions.json"), "zone-SE3.json": fixture("zone-SE3.json") };
+  const { page, close } = await openPage(browser, `${server.origin}/`, { route: serve(files) });
+  try {
+    await page.locator('#board tr[data-zone="SE3"] .zd-open').click();
+    await page.locator("#zd-chart .zd-hit").waitFor();
+    assert.equal(await page.evaluate(() => location.hash), "#zone=SE3");
+    assert.equal(await page.locator("#zd-chart path").count(), 2);
+    assert.match(await page.locator("#zd-note").innerText(), /1 interval changed after first publication/);
+    assert.match(await page.locator("#zd-srcs").innerText(), /eSett[\s\S]*ENTSO-E/);
+    await page.keyboard.press("Escape");
+    await page.locator("#zd[open]").waitFor({ state: "detached" });
+    // The dialog's close event, which clears the address, fires just after it closes.
+    await page.waitForFunction(() => location.hash === "", null, { timeout: 2000 });
+  } finally {
+    await close();
+  }
+});
+
+for (const mode of ["strings", "numbers"]) {
   test(`markup in the data files is shown as text, never run (payload in ${mode})`, async () => {
     // The CSP is switched off here, so this checks the page's own escaping, not the policy.
     const files = { "summary.json": poison(fixture("summary.json"), mode), "revisions.json": poison(fixture("revisions.json"), mode) };

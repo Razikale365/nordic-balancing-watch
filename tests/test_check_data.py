@@ -82,3 +82,41 @@ def test_missing_file_fails(tmp_path):
     res = run_check(d)
     assert res.returncode != 0
     assert "missing" in res.stderr
+
+
+def zone_dir(tmp_path, change, name="zone-SE3.json"):
+    d = tmp_path / "zones"
+    shutil.copytree(FIXTURE, d)
+    z = json.loads((FIXTURE / "zone-SE3.json").read_text(encoding="utf-8"))
+    change(z)
+    (d / "zone-SE3.json").unlink()
+    (d / name).write_text(json.dumps(z), encoding="utf-8")
+    return d
+
+
+def test_zone_lists_of_different_lengths_fail(tmp_path):
+    res = run_check(zone_dir(tmp_path, lambda z: z["direction"].pop()))
+    assert res.returncode != 0
+    assert "same length" in res.stderr
+
+
+def test_zone_text_in_a_price_list_fails(tmp_path):
+    def breakit(z):
+        z["series"]["esett"][-2] = "<img src=x>"
+    res = run_check(zone_dir(tmp_path, breakit))
+    assert res.returncode != 0
+    assert "series.esett" in res.stderr
+
+
+def test_zone_revision_outside_the_grid_or_source_fails(tmp_path):
+    def breakit(z):
+        z["revisions"] = [[len(z["direction"]), "esett", 1.0, "2026-10-24T17:45:00Z"], [0, "svk", 1.0, "2026-10-24T17:45:00Z"]]
+    res = run_check(zone_dir(tmp_path, breakit))
+    assert res.returncode != 0
+    assert "revisions[0]" in res.stderr and "revisions[1]" in res.stderr
+
+
+def test_zone_file_must_match_its_name(tmp_path):
+    res = run_check(zone_dir(tmp_path, lambda z: None, name="zone-SE4.json"))
+    assert res.returncode != 0
+    assert "zone must be 'SE4'" in res.stderr

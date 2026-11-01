@@ -463,6 +463,32 @@
     </div>
   </footer>
 
+  <dialog class="zd" id="zd" aria-labelledby="zd-title">
+    <div class="zd-head">
+      <div>
+        <h2 id="zd-title">Zone</h2>
+        <p class="muted small" id="zd-sub"></p>
+      </div>
+      <div class="zd-ctl">
+        <div class="seg" id="zd-range" role="group" aria-label="Time range">
+          <button type="button" data-n="24">6 h</button><button type="button" data-n="48">12 h</button><button type="button" data-n="96">24 h</button><button type="button" data-n="672">7 days</button>
+        </div>
+        <button type="button" class="btn ghost" id="zd-prev" aria-label="Previous zone">↑</button>
+        <button type="button" class="btn ghost" id="zd-next" aria-label="Next zone">↓</button>
+        <button type="button" class="btn ghost" id="zd-close" aria-label="Close">✕</button>
+      </div>
+    </div>
+    <div class="legend zd-srcs" id="zd-srcs"></div>
+    <p class="zd-note" id="zd-note"></p>
+    <div class="chart zd-chart" id="zd-chart"></div>
+    <div class="zd-stats" id="zd-stats"></div>
+    <div class="zd-foot">
+      <span class="muted small" id="zd-asof"></span>
+      <button type="button" class="btn" id="zd-csv">Download CSV</button>
+    </div>
+    <div class="tooltip" id="zd-tip" role="tooltip"></div>
+  </dialog>
+
   <div class="tooltip" id="tooltip" role="tooltip"></div>
 </body>
 </html>

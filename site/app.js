@@ -27,6 +27,8 @@
   });
 
   var state = { tz: load("nbw.tz", "UTC"), zones: load("nbw.zones", null), summary: null, revisions: [], tables: {}, cov: { label: "last 7 days" } };
+  /* A stored value from an older version, or an edited one, must not break every time on the page. */
+  if (["UTC", "Europe/Stockholm"].indexOf(state.tz) < 0) state.tz = "UTC";
   function inZones(z) { return !state.zones || state.zones.indexOf(z) >= 0; }
   function term(key, text) { return '<span class="term" data-term="' + key + '">' + text + "</span>"; }
 
@@ -192,7 +194,10 @@
 
   var tip = null;
   function showTip(html, x, y) {
-    tip = tip || $("tooltip");
+    /* An open modal dialog sits above the page, so it carries its own tooltip. */
+    var zd = $("zd");
+    if (tip) tip.classList.remove("on");
+    tip = zd && zd.open ? $("zd-tip") : $("tooltip");
     tip.innerHTML = html;
     tip.classList.add("on");
     var w = tip.offsetWidth, h = tip.offsetHeight, pad = 12;
@@ -658,27 +663,31 @@
     });
   };
   DataTable.prototype.csv = function () {
-    var cols = this.visible(), rows = this.view();
-    var cellOf = function (v) {
-      /* Derived numbers (hours, shares) carry float noise such as 25.334999999999997. */
-      if (typeof v === "number" && isFinite(v) && v !== Math.round(v)) v = Number(v.toFixed(6));
-      var s = v == null ? "" : String(v);
-      /* Text that a spreadsheet would read as a formula is prefixed with an apostrophe. */
-      if (typeof v !== "number" && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
-      return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-    };
-    var text = [cols.map(function (c) { return cellOf(c.csvLabel || c.label); }).join(",")].concat(rows.map(function (r) {
-      return cols.map(function (c) { return cellOf(c.csv ? c.csv(r) : c.get(r)); }).join(",");
-    })).join("\n");
+    var cols = this.visible();
+    downloadCsv(this.cfg.csvName, [cols.map(function (c) { return c.csvLabel || c.label; })].concat(this.view().map(function (r) {
+      return cols.map(function (c) { return c.csv ? c.csv(r) : c.get(r); });
+    })));
+  };
+
+  function csvCell(v) {
+    /* Derived numbers (hours, shares) carry float noise such as 25.334999999999997. */
+    if (typeof v === "number" && isFinite(v) && v !== Math.round(v)) v = Number(v.toFixed(6));
+    var s = v == null ? "" : String(v);
+    /* Text that a spreadsheet would read as a formula is prefixed with an apostrophe. */
+    if (typeof v !== "number" && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function downloadCsv(name, rows) {
+    var text = rows.map(function (r) { return r.map(csvCell).join(","); }).join("\n");
     var url = URL.createObjectURL(new Blob([text + "\n"], { type: "text/csv;charset=utf-8" }));
     var a = document.createElement("a");
     a.href = url;
-    a.download = this.cfg.csvName;
-    document.body.appendChild(a);
+    a.download = name;
+    (document.querySelector("dialog[open]") || document.body).appendChild(a);
     a.click();
     a.remove();
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-  };
+  }
 
   /* ---------- derived views of the summary ---------- */
 
@@ -911,7 +920,8 @@
     var body = zones.map(function (z) {
       var entries = now.filter(function (e) { return e.zone === z; });
       var newest = entries.reduce(function (m, e) { return !m || e.interval_start > m.interval_start ? e : m; }, null);
-      return '<tr><td class="zone-col"><b>' + esc(z) + "</b><span>" + esc(country(z)) + "</span></td>" + cats.map(function (c) {
+      return '<tr class="zd-row" data-zone="' + esc(z) + '"><td class="zone-col"><button type="button" class="zd-open" aria-label="Open ' +
+        esc(z) + ' details"><b>' + esc(z) + "</b><span>" + esc(country(z)) + '</span><span class="zd-more">Details ›</span></button></td>' + cats.map(function (c) {
         var e = entries.filter(function (x) { return cat(x.source) === c; })[0];
         if (!e) return '<td class="muted">—</td>';
         var zero = e.price === 0 && e.source === "esett";
@@ -930,6 +940,7 @@
     table.innerHTML = head + "<tbody>" + body + "</tbody>";
     $("board-legend").innerHTML = "";
     $("board-note").textContent = (zeroSeen ? "* In this data, eSett values of 0.00 have often been replaced by a different value later. " : "") +
+      "Click a zone for its last 7 days from every source. " +
       "The change is against the interval before; the line shows up to the last 4 hours. " +
       "Times are when each 15-minute interval started, and how long ago it ended. " +
       "“Later than usual” means the newest price is more than 30 minutes older than this source’s 95th percentile.";
@@ -1442,6 +1453,320 @@
     renderRevisionTable(v.revs);
   }
 
+  /* ---------- zone detail panel ---------- */
+
+  /* One zone's last 7 days from every source, opened from the price board. The zone files
+     put every source on one 15-minute grid starting at `start`. */
+  var zd = { zone: null, n: 96, hidden: {}, data: {}, at: {} };
+  var ZD_DASH = { esett: "", entsoe: "6 3", tso: "1.5 3.5" };
+  var ZD_WIDTH = { esett: 1.6, entsoe: 2, tso: 3.2 };
+  var ZD_STEP = 15 * 60000;
+
+  function zdZones() {
+    return uniq(((state.summary && state.summary.now) || []).map(function (e) { return e.zone; }))
+      .filter(inZones).sort(function (a, b) { return zoneIndex(a) - zoneIndex(b); });
+  }
+
+  /* The file is trusted only as far as its shape: arrays of numbers or nulls, all on one grid. */
+  function zdValid(d, zone) {
+    if (!d || d.schema !== 1 || d.zone !== zone || d.interval_minutes !== 15 || !validTime(d.start)) return false;
+    var n = null;
+    var ok = function (a) {
+      if (!Array.isArray(a) || (n != null && a.length !== n)) return false;
+      n = a.length;
+      return a.every(function (v) { return v === null || (typeof v === "number" && isFinite(v)); });
+    };
+    var series = d.series && typeof d.series === "object" ? d.series : null;
+    var own = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); };
+    if (!series || !Object.keys(series).every(function (s) { return own(SRC_LABEL, s) && ok(series[s]); }) ||
+      !["direction", "mfrr_up", "mfrr_down"].every(function (k) { return ok(d[k]); }) || !(n > 0) || !Array.isArray(d.revisions)) return false;
+    /* Keep only well-formed revisions: [interval index, source, first price, first seen at]. */
+    d.revisions = d.revisions.filter(function (r) {
+      return Array.isArray(r) && Number.isInteger(r[0]) && r[0] >= 0 && r[0] < n && own(series, r[1]) &&
+        typeof r[2] === "number" && isFinite(r[2]) && !!validTime(r[3]);
+    });
+    return true;
+  }
+
+  function zdOpen(zone) {
+    if (ZONES.indexOf(zone) < 0) return;
+    var dlg = $("zd");
+    zd.zone = zone;
+    if (!dlg.open) dlg.showModal();
+    history.replaceState(null, "", "#zone=" + zone);
+    $("zd-title").textContent = zone + " · " + country(zone);
+    if (zd.data[zone] && Date.now() - zd.at[zone] < 5 * 60000) { zdRender(); return; }
+    ["zd-sub", "zd-note", "zd-asof"].forEach(function (id) { $(id).textContent = ""; });
+    $("zd-srcs").innerHTML = ""; $("zd-stats").innerHTML = "";
+    $("zd-chart").innerHTML = '<p class="empty-chart">Loading ' + esc(zone) + "…</p>";
+    fetchJson("/data/zone-" + zone + ".json").then(function (d) {
+      if (!zdValid(d, zone)) throw new Error("unexpected zone data");
+      zd.data[zone] = d;
+      zd.at[zone] = Date.now();
+      if (zd.zone === zone) zdRender();
+    }).catch(function (err) {
+      if (window.console) console.warn("zone data unavailable:", err.message || err);
+      if (zd.zone === zone) $("zd-chart").innerHTML = '<p class="empty-chart">The detail data for ' + esc(zone) + " is not available right now.</p>";
+    });
+  }
+
+  function zdStep(by) {
+    var zones = zdZones(), i = zones.indexOf(zd.zone);
+    if (zones.length) zdOpen(zones[(i + by + zones.length) % zones.length]);
+  }
+
+  function zdRender() {
+    var d = zd.data[zd.zone];
+    if (!d || !$("zd").open) return;
+    var t0 = Date.parse(d.start);
+    var iso = function (i) { return new Date(t0 + i * ZD_STEP).toISOString(); };
+    var hm = function (i) { return fmtTime(iso(i), { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }); };
+    /* With more than a day on screen a time needs its date. */
+    var when = function (i) { return zd.n > 96 ? fmtTime(iso(i), { day: "numeric", month: "short" }) + " " + hm(i) : hm(i); };
+    var srcs = Object.keys(d.series).sort(function (a, b) { return CAT_ORDER.indexOf(cat(a)) - CAT_ORDER.indexOf(cat(b)); });
+    var last = -1;
+    srcs.forEach(function (s) { for (var i = d.series[s].length - 1; i > last; i--) if (d.series[s][i] != null) { last = i; break; } });
+    document.querySelectorAll("#zd-range button").forEach(function (b) { b.setAttribute("aria-pressed", String(+b.getAttribute("data-n") === zd.n)); });
+    $("zd-asof").textContent = validTime(d.generated_at) ? "Data as of " + dateTime(d.generated_at) + " " + tzName(d.generated_at) : "";
+    if (last < 0) {
+      ["zd-sub", "zd-note"].forEach(function (id) { $(id).textContent = ""; });
+      $("zd-srcs").innerHTML = ""; $("zd-stats").innerHTML = "";
+      $("zd-chart").innerHTML = '<p class="empty-chart">No price for ' + esc(zd.zone) + " in the last 7 days.</p>";
+      return;
+    }
+    var s0 = Math.max(0, last + 1 - zd.n);
+    $("zd-sub").textContent = dateTime(iso(s0)) + " to " + dateTime(iso(last + 1)) + " " + tzName(iso(last)) +
+      " · EUR/MWh, one value per 15 minutes";
+
+    $("zd-srcs").innerHTML = srcs.map(function (s) {
+      var c = cat(s);
+      return '<label><input type="checkbox" data-src="' + esc(s) + '"' + (zd.hidden[s] ? "" : " checked") + ">" +
+        '<svg width="24" height="10" aria-hidden="true"><line x1="1" x2="23" y1="5" y2="5" stroke="' + catColor(c) +
+        '" stroke-width="2.4" stroke-dasharray="' + ZD_DASH[c] + '"/></svg>' + esc(SRC_LABEL[s] || s) + "</label>";
+    }).join("") + '<span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="none" stroke="var(--down)" stroke-width="2"/></svg>First price, later changed</span>';
+    $("zd-srcs").querySelectorAll("input").forEach(function (box) {
+      box.addEventListener("change", function () { zd.hidden[box.getAttribute("data-src")] = !box.checked; zdRender(); });
+    });
+
+    var revs = d.revisions.filter(function (r) { return r[0] >= s0 && r[0] <= last; });
+    /* eSett's first figure for an interval can be a 0.00 placeholder while the others already
+       have the price (Finland, about an hour). */
+    var interim = [];
+    if (d.series.esett) {
+      for (var i = s0; i <= last; i++) {
+        if (d.series.esett[i] !== 0) continue;
+        var other = srcs.some(function (s) { return s !== "esett" && d.series[s][i] != null && Math.abs(d.series[s][i]) >= 1; });
+        if (other) interim.push(i);
+      }
+    }
+    var notes = [];
+    if (interim.length) {
+      notes.push('<span class="zd-warn">eSett shows 0.00 for ' + interim.length + (interim.length === 1 ? " interval" : " intervals") +
+        " (" + esc(interim.slice(-4).map(when).join(", ")) + (interim.length > 4 ? ", …" : "") +
+        ") while another source has the price. eSett&rsquo;s first figure can be a placeholder that is settled later.</span>");
+    }
+    if (revs.length) {
+      var changed = uniq(revs.map(function (r) { return r[0]; })).length;
+      notes.push('<span class="zd-rev">' + changed + (changed === 1 ? " interval" : " intervals") +
+        " changed after first publication: the circles mark the first price; hover them for when it was first seen.</span>");
+    }
+    $("zd-note").innerHTML = notes.join(" ");
+
+    zdChart(d, srcs, s0, last, revs, interim, iso, hm);
+    zdStats(d, srcs, s0, last, revs, when);
+  }
+
+  function zdChart(d, srcs, s0, last, revs, interim, iso, hm) {
+    var el = $("zd-chart");
+    var W = Math.max(280, el.clientWidth), L = 48, R = 10, T = 10, PH = W < 500 ? 170 : 220, DH = 10;
+    var DY = T + PH + 10, H = DY + DH + 26;
+    var vis = srcs.filter(function (s) { return !zd.hidden[s]; });
+    var vals = [];
+    vis.forEach(function (s) { for (var i = s0; i <= last; i++) if (d.series[s][i] != null) vals.push(d.series[s][i]); });
+    revs.forEach(function (r) { if (!zd.hidden[r[1]]) vals.push(r[2]); });
+    if (!vals.length) vals = [0, 1];
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    if (hi - lo < 1) { lo -= 1; hi += 1; }
+    var step = niceStep(hi - lo, PH < 200 ? 3 : 4);
+    lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+    var N = last - s0 + 1, cw = (W - L - R) / N;
+    var x = function (i) { return L + (i - s0 + 0.5) * cw; };
+    var y = function (v) { return T + (hi - v) / (hi - lo) * PH; };
+    var grid = "", ticks = "", body = "";
+    for (var v = lo; v <= hi + step / 2; v += step) {
+      var gy = y(v).toFixed(1);
+      grid += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + gy + '" y2="' + gy + '"' + (Math.abs(v) < step / 2 && lo < 0 ? ' class="zero"' : "") + "/>";
+      ticks += '<text x="' + (L - 6) + '" y="' + (+gy + 4) + '" text-anchor="end">' + esc(step >= 1 ? fmtInt(v) : v.toFixed(step >= 0.5 ? 1 : 2)) + "</text>";
+    }
+    /* Time labels as often as the width allows, on whole hours. */
+    var every = [4, 8, 12, 24, 48, 96, 192].filter(function (k) { return k * cw >= 64; })[0] || 192;
+    for (var i = s0; i <= last; i++) {
+      if (Math.round((Date.parse(iso(i)) / ZD_STEP)) % every !== 0) continue;
+      var label = hm(i) === "00:00" ? fmtTime(iso(i), { day: "numeric", month: "short" }) : hm(i);
+      ticks += '<text x="' + x(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + esc(label) + "</text>";
+    }
+    /* Regulation direction from eSett: up, down or none, one cell per interval. */
+    for (i = s0; i <= last; i++) {
+      var dir = d.direction[i];
+      if (dir == null) continue;
+      var fill = dir > 0 ? "var(--up)" : dir < 0 ? "var(--down)" : "var(--axis)";
+      body += '<rect x="' + (x(i) - cw / 2 + 0.25).toFixed(1) + '" y="' + DY + '" width="' + Math.max(0.6, cw - 0.5).toFixed(2) +
+        '" height="' + DH + '" fill="' + fill + '" opacity="0.8"/>';
+    }
+    ticks += '<text x="' + (L - 6) + '" y="' + (DY + 9) + '" text-anchor="end">Dir.</text>';
+    /* Thick dotted TSO line under the dashed ENTSO-E line under the thin eSett line, so
+       sources that agree still show as one stacked line. */
+    vis.slice().sort(function (a, b) { return CAT_ORDER.indexOf(cat(b)) - CAT_ORDER.indexOf(cat(a)); }).forEach(function (s) {
+      var c = cat(s), p = "", pen = false;
+      for (var j = s0; j <= last; j++) {
+        var val = d.series[s][j];
+        if (val == null) { pen = false; continue; }
+        p += (pen ? "L" : "M") + x(j).toFixed(1) + " " + y(val).toFixed(1);
+        pen = true;
+      }
+      if (p) body += '<path d="' + p + '" fill="none" stroke="' + catColor(c) + '" stroke-width="' + ZD_WIDTH[c] +
+        '" stroke-dasharray="' + ZD_DASH[c] + '" stroke-linejoin="round" stroke-linecap="round"/>';
+    });
+    revs.forEach(function (r) {
+      if (zd.hidden[r[1]] || d.series[r[1]][r[0]] == null) return;
+      var rx = x(r[0]).toFixed(1);
+      body += '<line x1="' + rx + '" x2="' + rx + '" y1="' + y(r[2]).toFixed(1) + '" y2="' + y(d.series[r[1]][r[0]]).toFixed(1) +
+        '" stroke="var(--down)" stroke-dasharray="2 2"/><circle cx="' + rx + '" cy="' + y(r[2]).toFixed(1) +
+        '" r="4.5" fill="var(--surface)" stroke="var(--down)" stroke-width="2"/>';
+    });
+    if (!zd.hidden.esett) interim.forEach(function (j) {
+      body += '<circle cx="' + x(j).toFixed(1) + '" cy="' + y(0).toFixed(1) + '" r="4" fill="none" stroke="var(--amber)" stroke-width="2"/>';
+    });
+    el.innerHTML = '<svg viewBox="0 0 ' + W + " " + H + '" height="' + H + '" role="img" aria-label="Imbalance price in ' + esc(zd.zone) +
+      ' per 15 minutes by source, with the regulation direction below"><g class="grid">' + grid + '</g><g class="tick">' + ticks + "</g>" + body +
+      '<line class="zd-x" x1="0" x2="0" y1="' + T + '" y2="' + (DY + DH) + '" visibility="hidden"/>' +
+      '<rect class="zd-hit" x="' + L + '" y="0" width="' + (W - L - R) + '" height="' + (DY + DH) + '" fill="transparent"/></svg>';
+
+    var svg = el.querySelector("svg"), cross = el.querySelector(".zd-x"), hit = el.querySelector(".zd-hit");
+    var at = function (e) {
+      var b = svg.getBoundingClientRect();
+      return Math.min(last, Math.max(s0, Math.floor(((e.clientX - b.left) / b.width * W - L) / cw) + s0));
+    };
+    var point = function (e) {
+      var j = at(e);
+      cross.setAttribute("x1", x(j)); cross.setAttribute("x2", x(j)); cross.setAttribute("visibility", "visible");
+      showTip(zdTip(d, srcs, j, revs, iso, hm), e.clientX, e.clientY);
+    };
+    hit.addEventListener("pointermove", point);
+    /* A tap has no pointer movement: it shows the interval and keeps it until the next tap. */
+    hit.addEventListener("pointerup", function (e) { if (e.pointerType !== "mouse") point(e); });
+    hit.addEventListener("pointerleave", function (e) {
+      if (e.pointerType !== "mouse") return;
+      cross.setAttribute("visibility", "hidden"); hideTip();
+    });
+  }
+
+  function zdTip(d, srcs, i, revs, iso, hm) {
+    var dir = d.direction[i];
+    return '<div class="t-title">' + esc(fmtTime(iso(i), { day: "numeric", month: "short" }) + ", " + hm(i) + "–" + hm(i + 1) + " " + tzName(iso(i))) + "</div>" +
+      srcs.map(function (s) {
+        var r = revs.filter(function (q) { return q[0] === i && q[1] === s; })[0];
+        return tipRow(cat(s), SRC_LABEL[s] || s, fmtPrice(d.series[s][i])) +
+          (r ? '<div class="t-sub zd-was">First ' + fmtPrice(r[2]) + ", seen " + esc(dateTime(r[3])) + "</div>" : "");
+      }).join("") +
+      '<div class="t-sub">Direction: ' + (dir == null ? "not yet published" : dir > 0 ? "up" : dir < 0 ? "down" : "none") +
+      (d.mfrr_up[i] != null || d.mfrr_down[i] != null ? "<br>mFRR up " + fmtPrice(d.mfrr_up[i]) + " · down " + fmtPrice(d.mfrr_down[i]) : "") + "</div>";
+  }
+
+  function zdStats(d, srcs, s0, last, revs, hm) {
+    /* Figures come from the source with the most values in the window (ENTSO-E on ties). */
+    var count = function (s) { var c = 0; for (var i = s0; i <= last; i++) if (d.series[s][i] != null) c++; return c; };
+    var ref = srcs.slice().sort(function (a, b) { return count(b) - count(a) || (b === "entsoe") - (a === "entsoe"); })[0];
+    var a = d.series[ref], vals = [], jump = 0, jumpAt = s0;
+    for (var i = s0; i <= last; i++) {
+      if (a[i] == null) continue;
+      vals.push(a[i]);
+      if (i > s0 && a[i - 1] != null && Math.abs(a[i] - a[i - 1]) > Math.abs(jump)) { jump = a[i] - a[i - 1]; jumpAt = i; }
+    }
+    var have = srcs.filter(function (s) { return d.series[s][last] != null; }), newest = have[0];
+    var dirs = d.direction.slice(s0, last + 1).filter(function (x) { return x != null; });
+    var up = dirs.filter(function (x) { return x > 0; }).length, down = dirs.filter(function (x) { return x < 0; }).length;
+    var differ = 0, both = 0;
+    for (i = s0; i <= last; i++) {
+      var seen = srcs.filter(function (s) {
+        var x = d.series[s][i];
+        /* eSett's 0.00 placeholder is flagged on its own, not counted as a disagreement. */
+        return x != null && !(s === "esett" && x === 0 && srcs.some(function (o) { return o !== s && d.series[o][i] != null && Math.abs(d.series[o][i]) >= 1; }));
+      }).map(function (s) { return d.series[s][i]; });
+      if (seen.length < 2) continue;
+      both++;
+      if (Math.max.apply(null, seen) - Math.min.apply(null, seen) > 0.005) differ++;
+    }
+    var tile = function (label, value, sub) {
+      return '<div class="zd-stat"><span>' + esc(label) + "</span><b>" + value + "</b>" + (sub ? "<small>" + sub + "</small>" : "") + "</div>";
+    };
+    $("zd-stats").innerHTML =
+      tile("Latest", fmtPrice(d.series[newest][last]), esc(hm(last) + " · " + have.map(function (s) { return SRC_LABEL[s] || s; }).join(", "))) +
+      tile("Low / high", fmtPrice(Math.min.apply(null, vals)) + " / " + fmtPrice(Math.max.apply(null, vals)), esc(SRC_LABEL[ref] || ref)) +
+      tile("Average", fmtPrice(vals.length ? sum(vals) / vals.length : null), fmtInt(vals.length) + " intervals") +
+      tile("Biggest 15-min move", (jump > 0 ? "+" : jump < 0 ? "−" : "") + fmtPrice(Math.abs(jump)), jump ? "into " + esc(hm(jumpAt)) : "") +
+      tile("Regulated up / down", dirs.length ? fmtPct(up / dirs.length) + " / " + fmtPct(down / dirs.length) : "—", "eSett direction") +
+      tile("Sources differ", both ? fmtInt(differ) + " of " + fmtInt(both) : "—", revs.length ? fmtInt(revs.length) + " later changes" : "intervals with 2+ sources");
+  }
+
+  function zdCsv() {
+    var d = zd.data[zd.zone];
+    if (!d) return;
+    var srcs = Object.keys(d.series), t0 = Date.parse(d.start);
+    var first = {};
+    d.revisions.forEach(function (r) { if (Array.isArray(r) && d.series[r[1]]) first[r[0] + "|" + r[1]] = r[2]; });
+    var revised = srcs.filter(function (s) { return d.revisions.some(function (r) { return r[1] === s; }); });
+    var rows = [["Interval start (UTC)"].concat(srcs.map(function (s) { return (SRC_LABEL[s] || s) + " (EUR/MWh)"; }),
+      revised.map(function (s) { return (SRC_LABEL[s] || s) + " first price before a change"; }),
+      ["eSett direction", "eSett mFRR up (EUR/MWh)", "eSett mFRR down (EUR/MWh)"])];
+    for (var i = 0; i < d.direction.length; i++) {
+      var row = srcs.map(function (s) { return d.series[s][i]; });
+      if (row.every(function (v) { return v == null; })) continue;
+      rows.push([new Date(t0 + i * ZD_STEP).toISOString().replace(".000Z", "Z")].concat(row,
+        revised.map(function (s) { return first[i + "|" + s]; }), [d.direction[i], d.mfrr_up[i], d.mfrr_down[i]]));
+    }
+    downloadCsv("nordic-imbalance-" + zd.zone + "-7-days.csv", rows);
+  }
+
+  function bindZonePanel() {
+    var dlg = $("zd");
+    $("board").addEventListener("click", function (e) {
+      var row = e.target.closest && e.target.closest(".zd-row");
+      if (row) zdOpen(row.getAttribute("data-zone"));
+    });
+    $("zd-range").addEventListener("click", function (e) {
+      var b = e.target.closest("button");
+      if (b) { zd.n = +b.getAttribute("data-n"); zdRender(); }
+    });
+    $("zd-prev").addEventListener("click", function () { zdStep(-1); });
+    $("zd-next").addEventListener("click", function () { zdStep(1); });
+    $("zd-close").addEventListener("click", function () { dlg.close(); });
+    $("zd-csv").addEventListener("click", zdCsv);
+    /* Up and down switch zones while the panel fits the screen; when it has to scroll
+       (a short screen), the keys scroll it as usual. */
+    dlg.addEventListener("keydown", function (e) {
+      if ((e.key === "ArrowUp" || e.key === "ArrowDown") && dlg.scrollHeight <= dlg.clientHeight) {
+        e.preventDefault();
+        zdStep(e.key === "ArrowUp" ? -1 : 1);
+      }
+    });
+    /* A click on the dimmed page around the panel closes it. */
+    dlg.addEventListener("click", function (e) {
+      var r = dlg.getBoundingClientRect();
+      if (e.target === dlg && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) dlg.close();
+    });
+    dlg.addEventListener("close", function () {
+      zd.zone = null;
+      hideTip();
+      if (/^#zone=/.test(location.hash)) history.replaceState(null, "", location.pathname + location.search);
+    });
+    window.addEventListener("hashchange", zdFromHash);
+  }
+  function zdFromHash() {
+    var m = /^#zone=([A-Z0-9]+)$/.exec(location.hash);
+    if (m) zdOpen(m[1]);
+  }
+
   /* ---------- boot ---------- */
 
   function fetchJson(url) {
@@ -1471,12 +1796,14 @@
       document.querySelectorAll("[data-needs-data]").forEach(function (el) { el.hidden = false; });
       renderAll();
       renderCitation(summary);
+      bindZonePanel();
+      zdFromHash();
       var w = window.innerWidth, t;
       window.addEventListener("resize", function () {
         if (window.innerWidth === w) return;
         w = window.innerWidth;
         clearTimeout(t);
-        t = setTimeout(renderCharts, 150);
+        t = setTimeout(function () { renderCharts(); zdRender(); }, 150);
       });
       setInterval(function () { renderStatus(summary); }, 60000);
     });

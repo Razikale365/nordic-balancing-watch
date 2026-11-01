@@ -147,14 +147,14 @@ code { font-family: var(--mono); font-size: 0.9em; }
 }
 .nav a:hover { background: var(--row-hover); color: var(--ink); }
 .topbar .spacer { flex: 1; }
-.tz {
+.tz, .seg {
   display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; flex: none;
 }
-.tz button {
+.tz button, .seg button {
   font: inherit; font-size: 13px; border: 0; background: transparent; color: var(--ink-2);
   padding: 4px 10px; cursor: pointer;
 }
-.tz button[aria-pressed="true"] { background: var(--surface-2); color: var(--ink); font-weight: 600; }
+.tz button[aria-pressed="true"], .seg button[aria-pressed="true"] { background: var(--surface-2); color: var(--ink); font-weight: 600; }
 @media (max-width: 760px) { .nav { display: none; } }
 
 /* ---------- hero ---------- */
@@ -231,6 +231,12 @@ table.board td { vertical-align: top; padding: 9px 12px; white-space: normal; mi
 table.board th.zone-col, table.board td.zone-col { width: 72px; }
 table.board td.zone-col b { display: block; }
 table.board td.zone-col span { font-size: 12px; color: var(--muted); }
+/* Each board row opens the zone panel; the zone cell is its keyboard target. */
+table.board tr.zd-row { cursor: pointer; }
+table.board tr.zd-row:hover td { background: var(--row-hover); }
+.zd-open { font: inherit; color: inherit; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; display: block; }
+.zd-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+table.board td.zone-col .zd-more { display: block; margin-top: 4px; color: var(--accent); font-size: 12px; }
 .px-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .px { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 .px-sub { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; }
@@ -377,6 +383,41 @@ table.board td.zone-col span { font-size: 12px; color: var(--muted); }
 .chart .axis-title { fill: var(--muted); font-size: 11.5px; }
 .chart .outlier { fill: var(--muted); font-size: 11px; }
 .empty-chart { color: var(--muted); font-size: 14px; padding: 20px 0 8px; }
+
+/* ---------- zone panel ---------- */
+
+.zd {
+  width: min(980px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 18px 20px 16px;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--ink);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.25);
+}
+.zd::backdrop { background: rgba(10, 10, 9, 0.45); }
+.zd-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 10px 16px; }
+.zd-head h2 { margin: 0; font-size: 20px; }
+.zd-head p { margin: 4px 0 0; }
+.zd-ctl { display: flex; align-items: center; gap: 4px; }
+.zd-ctl .btn.ghost { min-width: 36px; justify-content: center; }
+.zd-srcs label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.zd-srcs input { margin: 0; accent-color: var(--accent); }
+.zd-note { font-size: 13px; margin: 10px 0 0; min-height: 0; }
+.zd-note:empty { display: none; }
+.zd-warn { color: var(--warn-ink); background: var(--warn-bg); border-radius: 6px; padding: 2px 6px; }
+.zd-rev { color: var(--down); }
+.zd-chart { margin-top: 8px; }
+.chart .grid line.zero { stroke: var(--axis); }
+.zd-x { stroke: var(--muted); stroke-width: 1; pointer-events: none; }
+.zd-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-top: 12px; }
+.zd-stat { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; }
+.zd-stat span { display: block; font-size: 12px; color: var(--ink-2); }
+.zd-stat b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.zd-stat small { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.zd-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.tooltip .zd-was { color: var(--down); margin-top: 2px; padding-left: 20px; }
+/* On a phone the panel takes the whole screen. */
+@media (max-width: 640px) {
+  .zd { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border-radius: 0; border: 0; padding: 14px 16px; }
+  .zd-ctl { width: 100%; justify-content: space-between; }
+}
 .strip { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; align-items: end; }
 .strip + .strip { margin-top: 6px; }
 .strip-label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; padding-bottom: 6px; }

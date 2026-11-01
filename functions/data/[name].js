@@ -1,6 +1,8 @@
 // Cloudflare Pages Function: GET /data/<file> — serves the collector's hourly files from the
 // `data` branch, so new data needs no redeploy. Cached at the edge for five minutes.
 const FILES = new Set(["summary.json", "revisions.json"]);
+// One 7-day detail file per price zone, for the zone panel.
+const ZONE_FILE = /^zone-(DK[12]|FI|NO[1-5]|SE[1-4])\.json$/;
 const TTL = 300;
 // Crawlers may fetch the files (search engines need them to render the page) but should not
 // list them as search results of their own. Function responses do not get the headers in
@@ -20,7 +22,7 @@ function json(body, status) {
 
 export async function onRequestGet({ request, env, params }) {
   const name = String(params.name || "");
-  if (!FILES.has(name)) {
+  if (!FILES.has(name) && !ZONE_FILE.test(name)) {
     return json({ ok: false, error: "not found" }, 404);
   }
   // Without a data source (local dev), serve the static file from site/data.

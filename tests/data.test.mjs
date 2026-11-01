@@ -29,9 +29,21 @@ test("serves a valid file from the data branch with a cache header", async () =>
 
 test("unknown file names are 404 and never fetched", async () => {
   globalThis.fetch = async () => assert.fail("fetched");
-  const res = await get("secrets.json", { DATA_BASE_URL: BASE });
-  assert.equal(res.status, 404);
-  assert.equal(res.headers.get("x-robots-tag"), "noindex");
+  for (const name of ["secrets.json", "zone-XX.json", "zone-DK1.json.bak", "zone-../summary.json", "zone-NO6.json", "zone-DK1.json\n"]) {
+    const res = await get(name, { DATA_BASE_URL: BASE });
+    assert.equal(res.status, 404, name);
+    assert.equal(res.headers.get("x-robots-tag"), "noindex");
+  }
+});
+
+test("serves a zone detail file for each price zone", async () => {
+  globalThis.fetch = async (url) => {
+    assert.equal(url, `${BASE}/zone-NO2.json`);
+    return new Response(JSON.stringify({ schema: 1, zone: "NO2" }));
+  };
+  const res = await get("zone-NO2.json", { DATA_BASE_URL: BASE });
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).zone, "NO2");
 });
 
 test("bad upstream data is 502", async () => {
