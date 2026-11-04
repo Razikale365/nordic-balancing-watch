@@ -15,8 +15,10 @@ history it rests on.
 
 ## What the site shows
 
-- Headline figures and a short list of findings, computed from the current data, with the
-  amount of collected history they are based on.
+- Headline figures and a short list of findings, computed from the current data. The page
+  states when collection started and keeps the two scopes apart: the figures use a rolling
+  7-day window (plus up to 30 closed UTC days in the daily view), while the collector keeps
+  the full history since collection started.
 - Imbalance prices: minutes from the end of each interval until the first price appears, per
   zone and source (median and 95th percentile), the share of first prices changed later, and
   what those changes were.

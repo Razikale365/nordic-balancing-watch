@@ -733,8 +733,23 @@
     var since = c.since ? longDate(c.since) + ", " +
       fmtTime(c.since, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) + " " + tzName(c.since) : "";
     var seen = " Times are when the collector first saw each price, checking imbalance prices every 15 minutes and reserve prices every hour.";
+    /* Two scopes, kept apart on the page: the published figures are a rolling 7-day window,
+       while the collector keeps every version since collection started. */
+    var end = s.generated_at, start = new Date(Date.parse(end) - 7 * 86400000).toISOString();
+    if (c.since && !c.full) start = c.since;
+    var at = function (iso) { return longDate(iso) + ", " + fmtTime(iso, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) + " " + tzName(iso); };
+    var total = s.observations_total;
+    $("scope").innerHTML =
+      "<div><dt>Full collected history</dt><dd>" + (c.since
+        ? "Collecting since <b>" + esc(at(c.since)) + "</b> (" + esc(c.span) + ")"
+        : "Collection start not stated in the data") +
+        (total != null ? " · " + fmtInt(total) + " observations on record" : "") +
+        ". Every version is kept; this page publishes only the 7-day window and up to 30 closed UTC days.</dd></div>" +
+      "<div><dt>Figures on this page</dt><dd>" + (c.full ? "Rolling 7-day window" : "Everything collected so far, less than the 7-day window") +
+        ": <b>" + esc(at(start)) + "</b> to <b>" + esc(at(end)) + "</b>" +
+        (sample ? " · " + sample : "") + ".</dd></div>";
     $("sample-note").innerHTML = c.full
-      ? "Figures use the last 7 days of data" + (sample ? " (" + sample + ")" : "") + "." + seen
+      ? seen.trim()
       : !c.since
         ? "<b>Early observations, not established patterns.</b> The data does not say when collection started, so how much history the figures rest on is unknown" +
           (sample ? " (" + sample + ")" : "") + "." + seen
@@ -755,7 +770,7 @@
         (currency === 1 ? " time" : " times") + " in the window with the euro price unchanged. Those currency recalculations are not revisions and are not in the log." : "";
     });
     $("coverage-note").textContent = !c.since ? "The data does not say when collection started, so how much of the window is filled is unknown."
-      : c.full ? "Collection started on " + since + "; the 7-day window is full."
+      : c.full ? "Collection started on " + since + " and every version since then is kept. The figures here use only the rolling 7-day window, which is full; the daily view covers up to 30 closed UTC days."
       : "Collection started on " + since + ". The current data covers " + c.span + ", so the 7-day window is not yet full and every figure on this page comes from that shorter sample.";
   }
 
