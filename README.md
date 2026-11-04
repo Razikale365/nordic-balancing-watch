@@ -52,7 +52,7 @@ workflow runs only when the site's code changes.
 - [Energinet Energi Data Service](https://www.energidataservice.dk/) — CC BY 4.0
 - [Fingrid open data](https://data.fingrid.fi/) — CC BY 4.0
 - [ENTSO-E Transparency Platform](https://transparency.entsoe.eu/) — see the provider's terms
-- [Svenska kraftnät (Mimer)](https://mimer.svk.se/) — see the provider's terms
+- [Svenska kraftnät Data Service](https://data.svk.se/) — see the provider's terms
 
 The site is not affiliated with any of these organisations. The price data belongs to its
 providers under their licences; the code in this repository is MIT-licensed (see LICENSE).
