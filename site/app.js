@@ -61,9 +61,12 @@
   function zoneIndex(z) { var i = ZONES.indexOf(z); return i < 0 ? 99 : i; }
 
   function fmtInt(n) { return n == null ? "—" : Math.round(n).toLocaleString("en-GB"); }
+  /* A share that is not zero never reads as zero: 7 of 17,751 is "<0.1%", not "0.0%". */
   function fmtPct(x, digits) {
-    if (x == null) return "—";
-    return (x * 100).toFixed(digits == null ? (x > 0 && x < 0.1 ? 1 : 0) : digits) + "%";
+    if (x == null || !isFinite(x)) return "—";
+    var d = digits == null ? (x > 0 && x < 0.1 ? 1 : 0) : digits;
+    var s = (x * 100).toFixed(d);
+    return x > 0 && Number(s) === 0 ? "<" + Math.pow(10, -d).toFixed(d) + "%" : s + "%";
   }
   /* "2 in 5", "1 in 6": the nearest simple fraction, for plain-language sentences. */
   function simpleFraction(x) {
@@ -309,8 +312,14 @@
   /* Horizontal bars with a label column and the value printed past the bar end. */
   function hbars(el, rows, opt) {
     if (!rows.length) { el.innerHTML = '<p class="empty-chart">' + esc(opt.empty) + "</p>"; return; }
-    var W = Math.max(280, el.clientWidth), ROW = 30, BAR = 12, AX = 26;
+    var W = Math.max(280, el.clientWidth), AX = 26, BAR = 12;
     var L = Math.min(170, Math.round(W * 0.38)), VAL = Math.min(130, Math.round(W * 0.3));
+    /* When the longest label does not fit beside the bars, every label goes above its bar. */
+    var g2 = (hbars.canvas = hbars.canvas || document.createElement("canvas")).getContext("2d");
+    g2.font = "12.5px " + getComputedStyle(el).fontFamily;
+    var widest = Math.max.apply(null, rows.map(function (r) { return g2.measureText(r.label).width; }));
+    var stacked = widest + 14 > L, ROW = stacked ? 42 : 30;
+    if (stacked) L = 6;
     var plotW = W - L - VAL;
     var maxV = Math.max.apply(null, rows.map(function (r) { return r.value; }));
     var step = opt.step ? opt.step(maxV) : niceStep(maxV, 4);
@@ -318,11 +327,11 @@
     var x = function (v) { return L + v / xmax * plotW; };
     var body = "", tips = [], y = 2;
     rows.forEach(function (r) {
-      var cy = y + ROW / 2, x0 = L, x1 = Math.max(L + 2, x(r.value)), top = cy - BAR / 2, rad = 4;
+      var cy = stacked ? y + 29 : y + ROW / 2, x0 = L, x1 = Math.max(L + 2, x(r.value)), top = cy - BAR / 2, rad = 4;
       tips.push(r.tip);
       body += '<rect class="row-hit" x="0" y="' + y + '" width="' + W + '" height="' + ROW +
         '" rx="4" tabindex="0" data-tip="' + (tips.length - 1) + '" aria-label="' + esc(r.aria) + '"/>';
-      body += '<g pointer-events="none"><text class="row-label" x="6" y="' + (cy + 4) + '">' + esc(r.label) + "</text>";
+      body += '<g pointer-events="none"><text class="row-label' + (stacked ? " over" : "") + '" x="6" y="' + (stacked ? y + 15 : cy + 4) + '">' + esc(r.label) + "</text>";
       var rr = Math.min(rad, (x1 - x0) / 2);
       body += '<path d="M' + x0 + " " + top + "H" + (x1 - rr) + "Q" + x1 + " " + top + " " + x1 + " " + (top + rr) +
         "V" + (top + BAR - rr) + "Q" + x1 + " " + (top + BAR) + " " + (x1 - rr) + " " + (top + BAR) + "H" + x0 +
@@ -769,9 +778,10 @@
       el.textContent = currency ? "Energi Data Service also recalculated its Danish-krone price " + fmtInt(currency) +
         (currency === 1 ? " time" : " times") + " in the window with the euro price unchanged. Those currency recalculations are not revisions and are not in the log." : "";
     });
-    $("coverage-note").textContent = !c.since ? "The data does not say when collection started, so how much of the window is filled is unknown."
+    /* Replaces the page's own sentence, which stays only for readers without the data. */
+    $("coverage-note").textContent = !c.since ? "The statistics use a rolling 7-day window and the daily view covers up to 30 closed UTC days. The data does not say when collection started, so how much of the window is filled is unknown."
       : c.full ? "Collection started on " + since + " and every version since then is kept. The figures here use only the rolling 7-day window, which is full; the daily view covers up to 30 closed UTC days."
-      : "Collection started on " + since + ". The current data covers " + c.span + ", so the 7-day window is not yet full and every figure on this page comes from that shorter sample.";
+      : "Collection started on " + since + ". The current data covers " + c.span + ", so the 7-day window is not yet full and every figure on this page comes from that shorter sample; the daily view covers up to 30 closed UTC days.";
   }
 
   function renderStatus(s) {
@@ -938,13 +948,14 @@
       return '<tr class="zd-row" data-zone="' + esc(z) + '"><td class="zone-col"><button type="button" class="zd-open" aria-label="Open ' +
         esc(z) + ' details"><b>' + esc(z) + "</b><span>" + esc(country(z)) + '</span><span class="zd-more">Details ›</span></button></td>' + cats.map(function (c) {
         var e = entries.filter(function (x) { return cat(x.source) === c; })[0];
-        if (!e) return '<td class="muted">—</td>';
+        var lab = ' data-label="' + esc(CAT_LABEL[c]) + '"';
+        if (!e) return '<td class="muted"' + lab + ">—</td>";
         var zero = e.price === 0 && e.source === "esett";
         zeroSeen = zeroSeen || zero;
         var limit = p95[e.source + "|" + z];
         var late = limit != null && e.minutes_since_end > limit + 30;
         var isNewest = entries.length > 1 && e === newest && entries.filter(function (x) { return x.interval_start === e.interval_start; }).length === 1;
-        return '<td><div class="px-line"><span class="px">' + fmtPrice(e.price) + (zero ? "*" : "") + "</span>" +
+        return "<td" + lab + '><div class="px-line"><span class="px">' + fmtPrice(e.price) + (zero ? "*" : "") + "</span>" +
           chg(e.prev_price, e.price) + "</div>" + sparkline(e.recent) +
           '<span class="px-sub">For ' + esc(fmtTime(e.interval_start, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })) +
           " · " + esc(fmtDur(e.minutes_since_end)) + " ago" + (cat(e.source) === "tso" ? " · " + esc(SRC_LABEL[e.source]) : "") + "</span>" +
@@ -1058,7 +1069,9 @@
       };
     }).sort(function (a, b) { return b.value - a.value; });
     hbars($("size-chart"), rows, {
-      tick: function (t) { return String(Math.round(t)); },
+      tick: function (t) { return fmtInt(t); },
+      /* Counts are whole numbers, so the axis steps by at least 1 (no "0 0 1 1 1"). */
+      step: function (m) { return Math.max(1, niceStep(m, 4)); },
       empty: "No imbalance price change in the log yet."
     });
   }
@@ -1583,7 +1596,7 @@
     if (revs.length) {
       var changed = uniq(revs.map(function (r) { return r[0]; })).length;
       notes.push('<span class="zd-rev">' + changed + (changed === 1 ? " interval" : " intervals") +
-        " changed after first publication: the circles mark the first price; hover them for when it was first seen.</span>");
+        " changed after first publication: the circles mark the first price; point at or tap an interval to see when it was first seen.</span>");
     }
     $("zd-note").innerHTML = notes.join(" ");
 
