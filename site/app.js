@@ -1330,9 +1330,43 @@
         document.querySelectorAll(".tz button").forEach(function (o) {
           o.setAttribute("aria-pressed", String(o === b));
         });
+        fitTopbar();
         if (state.summary) renderAll();
       });
     });
+  }
+
+  /* The section links sit beside the name when everything fits on one row and move to a strip
+     underneath when it does not; the name gives way to its mark only when even that row is too
+     tight, and then the zone button to its short label ("DK, NO"). Measured rather than set by
+     width, because the zone label, the chosen time zone and the reader's fonts all change how
+     much room there is. */
+  function fitTopbar() {
+    var bar = document.querySelector(".topbar"), wrap = bar.querySelector(".wrap"), name = bar.querySelector(".brand span"), nav = bar.querySelector(".nav");
+    var zl = $("zp-label");
+    if (zl.hasAttribute("data-long")) zl.textContent = zl.getAttribute("data-long");
+    /* Fits: the name is whole, nothing spills past the bar, and the name and the controls share one line. */
+    var fits = function () {
+      var mid = [].filter.call(wrap.children, function (c) { return c !== nav && c.offsetWidth; })
+        .map(function (c) { var r = c.getBoundingClientRect(); return r.top + r.height / 2; });
+      return name.scrollWidth <= name.clientWidth + 0.5 && wrap.scrollWidth <= wrap.clientWidth + 0.5 &&
+        Math.max.apply(null, mid) - Math.min.apply(null, mid) < 4;
+    };
+    bar.classList.add("fitted");
+    bar.classList.remove("two-row", "short-name");
+    if (!fits()) bar.classList.add("two-row");
+    if (!fits()) bar.classList.add("short-name");
+    if (!fits() && zl.hasAttribute("data-short")) zl.textContent = zl.getAttribute("data-short");
+    document.documentElement.style.setProperty("--topbar-h", bar.offsetHeight + "px");
+  }
+  function bindTopbar() {
+    var frame;
+    fitTopbar();
+    window.addEventListener("resize", function () {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(fitTopbar);
+    });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTopbar);
   }
 
   /* Light or dark: follows the system until the reader picks one (set early by the inline
@@ -1372,7 +1406,12 @@
       $("zp-label").textContent = !state.zones ? "All zones" : covered && whole.length <= 2
         ? whole.map(function (c) { return COUNTRY[c]; }).join(", ")
         : n === 1 ? "Zone " + state.zones[0] : n + " zones";
+      /* The shorter form the top bar falls back to on a narrow screen. */
+      $("zp-label").setAttribute("data-short", !state.zones ? "All" : covered && whole.length <= 2
+        ? whole.join(", ") : n === 1 ? state.zones[0] : n + " zones");
+      $("zp-label").setAttribute("data-long", $("zp-label").textContent);
       btn.setAttribute("data-active", String(!!state.zones));
+      fitTopbar();
     }
     function apply(list) {
       state.zones = list && list.length && list.length < ZONES.length ? list : null;
@@ -1810,6 +1849,7 @@
   bindTheme();
   bindTimeZone();
   bindZonePicker();
+  bindTopbar();
   document.addEventListener("pointerdown", function (e) {
     if (!(e.target.closest && e.target.closest(".term, [data-tip]"))) hideTip();
   });

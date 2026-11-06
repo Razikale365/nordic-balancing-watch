@@ -94,7 +94,9 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
-html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+/* The script keeps --topbar-h equal to the sticky bar's height, one row or two. */
+html { scroll-behavior: smooth; scroll-padding-top: calc(var(--topbar-h, 56px) + 16px); }
+@media (max-width: 1179px) { html { --topbar-h: 92px; } }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
 body {
@@ -136,13 +138,14 @@ code { font-family: var(--mono); font-size: 0.9em; }
   backdrop-filter: saturate(1.4) blur(10px);
   border-bottom: 1px solid var(--border);
 }
-.topbar .wrap { display: flex; align-items: center; gap: 14px; height: 56px; }
+.topbar .wrap { --pad: 20px; display: flex; align-items: center; gap: 14px; height: 56px; }
+@media (max-width: 600px) { .topbar .wrap { --pad: 16px; } }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 26px; color: var(--ink); text-decoration: none; font-weight: 650; white-space: nowrap; }
 .brand svg { flex: none; }
 .brand span { overflow: hidden; text-overflow: ellipsis; }
-/* The section links never shrink, so no label is cut off. Where they do not fit beside the
-   controls, the name next to the logo goes first, then the links move to a row of their own. */
+/* The section links never shrink, so no label is cut off. */
 .nav { display: flex; flex: none; gap: 2px; }
+.nav::-webkit-scrollbar { display: none; }
 .nav a {
   color: var(--ink-2); text-decoration: none; font-size: 14px; padding: 6px 8px;
   border-radius: 6px; white-space: nowrap;
@@ -157,14 +160,29 @@ code { font-family: var(--mono); font-size: 0.9em; }
   padding: 4px 10px; cursor: pointer;
 }
 .tz button[aria-pressed="true"], .seg button[aria-pressed="true"] { background: var(--surface-2); color: var(--ink); font-weight: 600; }
-@media (max-width: 1179px) { .brand span { display: none; } }
-@media (min-width: 761px) and (max-width: 999px) {
-  html { scroll-padding-top: 100px; }
-  .topbar .wrap { flex-wrap: wrap; row-gap: 2px; height: auto; padding-top: 12px; padding-bottom: 6px; }
-  .brand span { display: inline; }
-  .nav { order: 1; flex-basis: 100%; margin-left: -8px; }
+/* Two rows: when the links do not fit beside the name and the controls, they move to a strip
+   underneath that scrolls sideways on a narrow screen, its edges faded so the cut-off link
+   shows there is more. The script chooses by measuring (.fitted, .two-row, .short-name),
+   because the zone label and the reader's fonts change the room; the widths here are only
+   the layout before it runs. */
+@media (max-width: 1179px) {
+  .topbar:not(.fitted) .wrap { flex-wrap: wrap; row-gap: 0; height: auto; padding-top: 10px; }
+  .topbar:not(.fitted) .nav {
+    order: 1; flex: 0 0 calc(100% + 2 * var(--pad)); min-width: 0; overflow-x: auto; scrollbar-width: none;
+    margin: 4px calc(-1 * var(--pad)) 0; padding: 0 calc(var(--pad) - 8px) 6px;
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 calc(var(--pad) - 8px), #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 calc(var(--pad) - 8px), #000 calc(100% - 28px), transparent);
+  }
 }
-@media (max-width: 760px) { .nav { display: none; } }
+.topbar.two-row .wrap { flex-wrap: wrap; row-gap: 0; height: auto; padding-top: 10px; }
+.topbar.two-row .nav {
+  order: 1; flex: 0 0 calc(100% + 2 * var(--pad)); min-width: 0; overflow-x: auto; scrollbar-width: none;
+  margin: 4px calc(-1 * var(--pad)) 0; padding: 0 calc(var(--pad) - 8px) 6px;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 calc(var(--pad) - 8px), #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 calc(var(--pad) - 8px), #000 calc(100% - 28px), transparent);
+}
+@media (max-width: 560px) { .topbar:not(.fitted) .brand span { display: none; } }
+.topbar.short-name .brand span { display: none; }
 
 /* ---------- hero ---------- */
 
@@ -360,7 +378,7 @@ table.board td.zone-col .zd-more { display: block; margin-top: 4px; color: var(-
   :root:where(:not([data-theme="light"])) .icon-btn .i-sun { display: block; }
   :root:where(:not([data-theme="light"])) .icon-btn .i-moon { display: none; }
 }
-@media (max-width: 560px) { .topbar .wrap { gap: 8px; } .tz button { padding: 4px 7px; } .zp-btn { padding: 5px 8px; } .brand span { display: none; } }
+@media (max-width: 560px) { .topbar .wrap { gap: 8px; } .tz button { padding: 4px 7px; } .zp-btn { padding: 5px 8px; } }
 /* Narrow phones: tighter spacing and no funnel icon keep every control on screen. */
 @media (max-width: 420px) {
   .topbar .wrap { gap: 6px; }

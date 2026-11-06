@@ -47,9 +47,13 @@ export async function startServer() {
 }
 
 // Opens a page and collects uncaught script errors and Content-Security-Policy violations;
-// close() fails the test if the policy blocked anything the page tried to do.
-export async function openPage(browser, url, { javaScriptEnabled = true, route, contextOptions } = {}) {
+// close() fails the test if the policy blocked anything the page tried to do. `storage` sets
+// saved reader choices (localStorage, as JSON) before the page loads.
+export async function openPage(browser, url, { javaScriptEnabled = true, route, contextOptions, storage } = {}) {
   const context = await browser.newContext({ javaScriptEnabled, ...contextOptions });
+  if (storage) {
+    await context.addInitScript((s) => { for (const [k, v] of Object.entries(s)) localStorage.setItem(k, JSON.stringify(v)); }, storage);
+  }
   const page = await context.newPage();
   page.setDefaultTimeout(10000);
   const errors = [], violations = [];

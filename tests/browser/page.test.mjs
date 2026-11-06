@@ -164,39 +164,55 @@ for (const [label, published, revised, value, sub] of [
   });
 }
 
-test("every section link reads in full and the top bar stays on screen at any width", async () => {
-  const { page, errors, close } = await open();
-  try {
-    await page.locator("#stats .stat").first().waitFor();
-    const LIB = "https://github.com/Razikale365/nordic-balancing";
-    assert.equal(await page.locator("#gh-btn").getAttribute("href"), LIB);
-    assert.equal(await page.locator(".hero-lib a").getAttribute("href"), LIB);
-    for (const width of [1440, 1180, 1100, 1000, 900, 761, 760, 420, 375, 320]) {
-      await page.setViewportSize({ width, height: 800 });
-      const r = await page.evaluate(() => {
-        const vw = document.documentElement.clientWidth, nav = document.querySelector(".nav");
-        const onScreen = (e) => { const b = e.getBoundingClientRect(); return b.left >= -0.5 && b.right <= vw + 0.5; };
-        return {
-          nav: getComputedStyle(nav).display !== "none",
-          linksWhole: nav.scrollWidth <= nav.clientWidth + 1 && [...nav.querySelectorAll("a")].every(onScreen),
-          lastLink: nav.lastElementChild.innerText,
-          controls: ["zp-btn", "theme-btn", "gh-btn"].every((id) => onScreen(document.getElementById(id))) && onScreen(document.querySelector(".tz")),
-          sideways: document.documentElement.scrollWidth - vw
-        };
-      });
-      assert.equal(r.nav, width > 760, `nav at ${width}px`);
-      if (r.nav) {
-        assert.ok(r.linksWhole, `a section link is cut off at ${width}px`);
+// A long zone label takes the room the name and the links need on one row.
+for (const [label, zones] of [["all zones", null], ["a long zone label", ["DK1", "DK2", "NO1", "NO2", "NO3", "NO4", "NO5"]]]) {
+  test(`with ${label}, the section links and the name are never cut off and the top bar stays on screen at any width`, async () => {
+    const { page, errors, close } = await open({ storage: zones && { "nbw.zones": zones } });
+    try {
+      await page.locator("#stats .stat").first().waitFor();
+      const LIB = "https://github.com/Razikale365/nordic-balancing";
+      assert.equal(await page.locator("#gh-btn").getAttribute("href"), LIB);
+      assert.equal(await page.locator(".hero-lib a").getAttribute("href"), LIB);
+      for (const width of [1920, 1440, 1180, 1100, 1000, 900, 761, 760, 600, 420, 375, 320]) {
+        await page.setViewportSize({ width, height: 800 });
+        await page.waitForTimeout(50);
+        const r = await page.evaluate(() => {
+          const vw = document.documentElement.clientWidth, nav = document.querySelector(".nav"), bar = document.querySelector(".topbar");
+          const onScreen = (e) => { const b = e.getBoundingClientRect(); return b.left >= -0.5 && b.right <= vw + 0.5; };
+          const name = document.querySelector(".brand span");
+          const mid = (e) => { const b = e.getBoundingClientRect(); return b.top + b.height / 2; };
+          return {
+            nav: getComputedStyle(nav).display !== "none",
+            twoRow: bar.classList.contains("two-row"),
+            linksWhole: nav.scrollWidth <= nav.clientWidth + 1 && [...nav.querySelectorAll("a")].every(onScreen),
+            // On two rows the strip may scroll; every link must still be reachable inside it.
+            linksReachable: [...nav.querySelectorAll("a")].every((a) => a.offsetLeft + a.offsetWidth <= nav.scrollWidth + 1),
+            lastLink: nav.lastElementChild.innerText,
+            nameCut: name.offsetWidth > 0 && name.scrollWidth > name.clientWidth + 0.5,
+            oneLine: Math.abs(mid(document.getElementById("zp-btn")) - mid(document.getElementById("gh-btn"))) < 4,
+            controls: ["zp-btn", "theme-btn", "gh-btn"].every((id) => onScreen(document.getElementById(id))) && onScreen(document.querySelector(".tz")),
+            sideways: document.documentElement.scrollWidth - vw
+          };
+        });
+        assert.ok(r.nav, `no section links at ${width}px`);
+        assert.ok(r.twoRow ? r.linksReachable : r.linksWhole, `a section link is cut off at ${width}px`);
         assert.equal(r.lastLink, "Data & method");
+        assert.ok(!r.nameCut, `the name is cut off at ${width}px`);
+        assert.ok(r.oneLine, `the controls wrap onto another line at ${width}px`);
+        assert.ok(r.controls, `a top-bar control is off screen at ${width}px`);
+        assert.equal(r.sideways, 0, `the page scrolls sideways at ${width}px`);
       }
-      assert.ok(r.controls, `a top-bar control is off screen at ${width}px`);
-      assert.equal(r.sideways, 0, `the page scrolls sideways at ${width}px`);
+      // Wide enough, everything shares one row with the name in full.
+      await page.setViewportSize({ width: 1920, height: 800 });
+      await page.waitForTimeout(50);
+      if (!zones) assert.ok(!(await page.locator(".topbar").evaluate((b) => b.classList.contains("two-row"))));
+      assert.equal(await page.locator(".brand span").innerText(), "Nordic Balancing Watch");
+      assert.deepEqual(errors, []);
+    } finally {
+      await close();
     }
-    assert.deepEqual(errors, []);
-  } finally {
-    await close();
-  }
-});
+  });
+}
 
 test("on a phone the menus open on screen and the price board and field list read without sideways scrolling", async () => {
   const { page, errors, close } = await open({ contextOptions: { viewport: { width: 320, height: 640 }, isMobile: true, hasTouch: true } });
@@ -222,6 +238,20 @@ test("on a phone the menus open on screen and the price board and field list rea
     // A count axis never repeats a value.
     const ticks = await page.locator("#size-chart .tick text").allTextContents();
     assert.equal(new Set(ticks).size, ticks.length, ticks.join(" "));
+    // The section strip under the controls scrolls to its last link, and following it lands the
+    // section heading below the sticky bar, not behind it.
+    const last = page.locator(".nav a", { hasText: "Data & method" });
+    await last.scrollIntoViewIfNeeded();
+    await last.click();
+    // Smooth scrolling: wait until the page has moved and come to rest.
+    await page.waitForFunction(() => new Promise((done) => {
+      const y = window.scrollY;
+      setTimeout(() => done(y > 0 && window.scrollY === y), 250);
+    }));
+    const below = await page.evaluate(() => document.querySelector("#data .section-head h2").getBoundingClientRect().top -
+      document.querySelector(".topbar").getBoundingClientRect().bottom);
+    assert.ok(below >= 0, `the Data & method heading is ${-below}px behind the top bar`);
+    await page.evaluate(() => window.scrollTo(0, 0));
     // The zone panel tells a touch reader to tap, not to hover.
     await page.locator("tr.zd-row").first().click();
     const note = await page.locator("#zd-note").innerText();
