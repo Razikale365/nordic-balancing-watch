@@ -86,9 +86,27 @@ test("social metadata matches the page", () => {
   assert.deepEqual(og("description"), meta(index, "name", "description"));
   const h1 = all(doc, (e) => e.tag === "h1")[0];
   assert.equal(og("title")[0], words(h1.text));
-  assert.deepEqual(meta(index, "name", "twitter:card"), ["summary"]);
-  // Only claim an image once there is one to show.
-  assert.equal(og("image").length, 0);
+  assert.deepEqual(meta(index, "name", "twitter:card"), ["summary_large_image"]);
+  for (const key of ["title", "description", "image", "image:alt"]) {
+    assert.deepEqual(meta(index, "name", `twitter:${key}`), og(key));
+  }
+});
+
+test("the initial head links a real social image with accurate dimensions and alt text", () => {
+  const head = index.slice(0, index.indexOf("</head>"));
+  const og = (p) => meta(head, "property", `og:${p}`);
+  assert.deepEqual(og("image"), [`${SITE}social-preview.png`]);
+  assert.deepEqual(og("image:type"), ["image/png"]);
+  assert.deepEqual(og("image:width"), ["1200"]);
+  assert.deepEqual(og("image:height"), ["630"]);
+  assert.equal(og("image:alt").length, 1);
+  assert.ok(og("image:alt")[0].length > 20);
+  const image = readFileSync(new URL(`../site${new URL(og("image")[0]).pathname}`, import.meta.url));
+  assert.equal(image.subarray(0, 8).toString("hex"), "89504e470d0a1a0a", "must be a PNG, not an HTML fallback");
+  assert.equal(image.toString("ascii", 12, 16), "IHDR");
+  assert.equal(image.readUInt32BE(16), Number(og("image:width")[0]));
+  assert.equal(image.readUInt32BE(20), Number(og("image:height")[0]));
+  assert.ok(image.length < 5 * 1024 * 1024, "social image must be smaller than 5 MB");
 });
 
 test("the public address is the same everywhere it is written", () => {
