@@ -1,6 +1,9 @@
 name: CI
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -42,3 +45,48 @@ jobs:
 
       - name: Browser tests (page without JavaScript, without data, and with data)
         run: node --test tests/browser/*.test.mjs
+
+  # Deploys only after every test above has passed, and only from main (or when started by hand).
+  deploy:
+    needs: test
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: nbw-pages-deploy
+      cancel-in-progress: false
+    env:
+      # Only whether the secrets are set; the token itself goes only to the steps that use it.
+      HAS_CLOUDFLARE: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+
+      - name: Test the functions
+        run: node --test tests/*.test.mjs
+
+      - name: Apply D1 migrations
+        if: ${{ env.HAS_CLOUDFLARE == 'true' }}
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3.15.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: d1 migrations apply nbw-waitlist --remote
+
+      - name: Deploy to Cloudflare Pages
+        if: ${{ env.HAS_CLOUDFLARE == 'true' }}
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3.15.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site --project-name=nordic-balancing-watch --branch=main
+
+      - name: Skip deploy
+        if: ${{ env.HAS_CLOUDFLARE != 'true' }}
+        run: echo "::notice::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not set; skipping deploy"

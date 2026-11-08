@@ -46,8 +46,9 @@ for the zone panel) — the format is the schema-1 contract validated by
 `scripts/check_data.py` — and pushes them every 15 minutes to the `data` branch of this
 repository. The site reads them through a small Pages Function (`functions/data/[name].js`)
 that fetches only these files from that branch, rejects anything that is not schema-1 JSON,
-and caches them at the edge for five minutes. New data therefore needs no redeploy; the deploy
-workflow runs only when the site's code changes.
+and caches them at the edge for five minutes. New data therefore needs no redeploy; the site
+is deployed only when its code changes, by the `deploy` job of the CI workflow, which starts
+after the tests have passed on `main` (or when run by hand).
 
 ## Data sources and licences
 
@@ -138,11 +139,11 @@ final domain.
 1. Create a Cloudflare Pages project named `nordic-balancing-watch` connected to this repo
    (or let the first `wrangler pages deploy` create it).
 2. Create the D1 database `nbw-waitlist` (`wrangler d1 create nbw-waitlist`) and paste the
-   printed id into `database_id` in `wrangler.toml`. The deploy workflow applies
+   printed id into `database_id` in `wrangler.toml`. The deploy job applies
    `migrations/` remotely on every run.
    Do this before step 3: the migrations step fails while the placeholder id is in place.
 3. Add two repository secrets: `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
-   Without them the workflow still runs the tests but skips the deploy step.
+   Without them the workflow still runs the tests but skips the deploy steps.
 4. Give the collector a deploy key with write access so it can push its data files to the
    `data` branch every 15 minutes.
 5. Add a Cloudflare rate-limiting rule for `/api/waitlist` (for example 5 requests per minute
