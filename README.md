@@ -86,11 +86,17 @@ python -m http.server -d site
 ## Tests
 
 ```
-python -m pytest -q                        # check_data.py contract tests
+python -m pytest -q                        # check_data.py and check_live.py tests
 node --test tests/*.test.mjs               # functions, page metadata and security header tests
 node --test tests/browser/*.test.mjs       # the page in Chromium (needs Playwright)
 python scripts/check_data.py tests/fixtures/data
 ```
+
+`scripts/check_live.py` does the same checks on the live site's data and also fails when the
+data is more than 45 minutes old, when more than a tenth of the collector's checks in the last
+24 hours failed, or when the newest price of a source and zone is more than two hours later
+than that series' 95th percentile. The `Data freshness` workflow runs it twice an hour, so a
+stalled collector shows up as a failed run.
 
 The browser tests check that the heading, explanations, method and glossary stay readable
 with JavaScript off, when `app.js` fails to load and when the data files cannot be fetched,
