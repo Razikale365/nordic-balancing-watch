@@ -1970,12 +1970,14 @@
     if (!(e.target.closest && e.target.closest(".term, [data-tip]"))) hideTip();
   });
 
+  /* Both files are requested at once; a revision log that fails to load is an empty one. */
+  var revisionsRequest = fetchJson("/data/revisions.json").then(function (rev) {
+    return rev && rev.schema === 1 ? rev.revisions : [];
+  }).catch(function () { return []; });
   fetchJson("/data/summary.json").then(function (summary) {
     if (!summary || summary.schema !== 1) throw new Error("unsupported data schema");
     state.summary = summary;
-    return fetchJson("/data/revisions.json").then(function (rev) {
-      return rev && rev.schema === 1 ? rev.revisions : [];
-    }).catch(function () { return []; }).then(function (revs) {
+    return revisionsRequest.then(function (revs) {
       state.revisions = revs;
       document.querySelectorAll("[data-needs-data]").forEach(function (el) { el.hidden = false; });
       renderAll();

@@ -288,6 +288,31 @@ test("the price board gives no percentage against a previous price under 10 EUR/
   }
 });
 
+test("the summary and the revision log are requested together, and a failed log is an empty one", async () => {
+  // The summary is held back until the log has been asked for: one after the other would wait for the timeout.
+  let asked;
+  const logAsked = new Promise((resolve) => { asked = resolve; });
+  let summaryWaitedForLog = null;
+  const handle = async (r) => {
+    if (r.request().url().endsWith("/revisions.json")) {
+      asked(true);
+      return r.abort("connectionfailed");
+    }
+    summaryWaitedForLog = await Promise.race([logAsked, new Promise((resolve) => setTimeout(resolve, 3000, false))]);
+    return r.continue();
+  };
+  const { page, errors, close } = await open({ route: { match: "**/data/*.json", handle } });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    assert.equal(summaryWaitedForLog, true);
+    assert.equal(await page.locator("#empty-state").isVisible(), false);
+    assert.match(await page.locator("#rev-table").innerText(), /0 rows/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
 // A long zone label takes the room the name and the links need on one row.
 for (const [label, zones] of [["all zones", null], ["a long zone label", ["DK1", "DK2", "NO1", "NO2", "NO3", "NO4", "NO5"]]]) {
   test(`with ${label}, the section links and the name are never cut off and the top bar stays on screen at any width`, async () => {
