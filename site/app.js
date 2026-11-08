@@ -323,6 +323,7 @@
     g2.font = "12.5px " + getComputedStyle(el).fontFamily;
     var widest = Math.max.apply(null, rows.map(function (r) { return g2.measureText(r.label).width; }));
     var stacked = widest + 14 > L, ROW = stacked ? 42 : 30;
+    g2.font = "12px " + getComputedStyle(el).fontFamily;  /* the value labels */
     if (stacked) L = 6;
     var plotW = W - L - VAL;
     var maxV = Math.max.apply(null, rows.map(function (r) { return r.value; }));
@@ -340,7 +341,9 @@
       body += '<path d="M' + x0 + " " + top + "H" + (x1 - rr) + "Q" + x1 + " " + top + " " + x1 + " " + (top + rr) +
         "V" + (top + BAR - rr) + "Q" + x1 + " " + (top + BAR) + " " + (x1 - rr) + " " + (top + BAR) + "H" + x0 +
         'Z" fill="' + r.color + '"/>';
-      body += '<text class="val-label" x="' + (x1 + 8) + '" y="' + (cy + 4) + '">' + esc(r.text) + "</text></g>";
+      /* A value label that would run past the chart gives way to its short form (the tooltip keeps the full one). */
+      var vtext = r.short && x1 + 8 + g2.measureText(r.text).width > W - 4 ? r.short : r.text;
+      body += '<text class="val-label" x="' + (x1 + 8) + '" y="' + (cy + 4) + '">' + esc(vtext) + "</text></g>";
       y += ROW;
     });
     var grid = "", ticks = "";
@@ -1234,6 +1237,7 @@
       return {
         label: SRC_LABEL[a.source] + " · " + a.data, value: hours, color: catColor(cat(a.source)),
         text: fmtHours(hours) + " · " + zones,
+        short: fmtHours(hours) + " · " + a.groups.length + (a.groups.length === 1 ? " zone" : " zones"),
         aria: SRC_LABEL[a.source] + " " + a.data + ": " + fmtHours(hours) + " ahead, " + zones,
         tip: '<div class="t-title">' + esc(SRC_LABEL[a.source]) + " · " + esc(a.data) + "</div>" +
           tipRow(cat(a.source), "Median lead", fmtHours(hours)) +

@@ -339,9 +339,27 @@ for (const [label, zones] of [["all zones", null], ["a long zone label", ["DK1",
 }
 
 test("on a phone the menus open on screen and the price board and field list read without sideways scrolling", async () => {
-  const { page, errors, close } = await open({ contextOptions: { viewport: { width: 320, height: 640 }, isMobile: true, hasTouch: true } });
+  // One capacity price series in every zone, so its value label is long.
+  const everyZone = routeSummary((s) => {
+    const base = s.groups.find((g) => g.source === "svk" && g.data === "FCR-N");
+    s.groups = s.groups.filter((g) => g !== base).concat(["DK1", "DK2", "FI", "NO1", "NO2", "NO3", "NO4", "NO5", "SE1", "SE2", "SE3", "SE4"]
+      .map((zone) => ({ ...structuredClone(base), zone })));
+  });
+  const { page, errors, close } = await open({ route: everyZone, contextOptions: { viewport: { width: 320, height: 640 }, isMobile: true, hasTouch: true } });
   try {
     await page.locator("#stats .stat").first().waitFor();
+    // No value label on a chart runs past the screen; a long zone list gives way to a count.
+    for (const width of [320, 375]) {
+      await page.setViewportSize({ width, height: 640 });
+      await page.waitForFunction((w) => [...document.querySelectorAll("#lead-chart svg")].every((s) => s.viewBox.baseVal.width <= w), width);
+      await page.waitForTimeout(300);
+      const labels = await page.locator("text.val-label").evaluateAll((els) => els.map((e) => ({ text: e.textContent, right: e.getBoundingClientRect().right })));
+      assert.ok(labels.length > 0);
+      for (const l of labels) assert.ok(l.right <= width, `"${l.text}" ends at ${l.right}px on a ${width}px screen`);
+      assert.ok(labels.some((l) => l.text === "46 h · 12 zones"), `at ${width}px: ${labels.map((l) => l.text).join(" | ")}`);
+    }
+    await page.locator('#lead-chart .row-hit[aria-label*="DK1"]').focus();
+    assert.match(await page.locator("#tooltip").innerText(), /DK1, DK2, FI, NO1–NO5, SE1–SE4/);
     const fits = (sel) => page.locator(sel).evaluate((e) => {
       const b = e.getBoundingClientRect();
       return b.left >= -0.5 && b.right <= document.documentElement.clientWidth + 0.5;
