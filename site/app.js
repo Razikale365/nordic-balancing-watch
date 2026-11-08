@@ -3,7 +3,8 @@
   "use strict";
 
   var CFG = window.NBW_CONFIG || {};
-  var STALE_MS = 3 * 60 * 60 * 1000;
+  var STALE_MS = 45 * 60 * 1000;  /* data is published every 15 minutes */
+  var REFRESH_MS = 15 * 60 * 1000;
 
   /* Sources are grouped into three categories so colour stays meaningful:
      eSett, ENTSO-E and the national TSOs (each TSO covers its own zones). */
@@ -831,8 +832,10 @@
       : "Collection started on " + since + ". The current data covers " + c.span + ", so the 7-day window is not yet full and every figure on this page comes from that shorter sample; the daily view covers up to 30 closed UTC days.";
   }
 
+  function isStale(s) { return Date.now() - Date.parse(s.generated_at) > STALE_MS; }
+
   function renderStatus(s) {
-    var age = Date.now() - Date.parse(s.generated_at), stale = age > STALE_MS;
+    var stale = isStale(s);
     $("live-dot").classList.toggle("stale", stale);
     $("status-line").innerHTML = (stale ? "Delayed" : "Live") + " · updated " +
       '<time datetime="' + esc(s.generated_at) + '">' +
@@ -842,7 +845,7 @@
     var b = $("stale-banner");
     if (stale) {
       b.firstChild.textContent = "This data was generated " + relTime(s.generated_at) +
-        "; the hourly refresh has not arrived yet, so the newest prices may be missing.";
+        "; it normally refreshes every 15 minutes, so the newest prices may be missing.";
       b.hidden = false;
     } else {
       b.hidden = true;
@@ -880,9 +883,16 @@
     var p = s.polls_24h || {}, total = (p.ok || 0) + (p.skipped || 0) + (p.error || 0);
     var health = total ? (p.ok / total >= 0.98 ? "up" : p.ok / total >= 0.9 ? "amber" : "down") : "";
     var win = state.cov.label.charAt(0).toUpperCase() + state.cov.label.slice(1);
-    tiles.push(["Price changes logged", fmtInt(revisions), win + (total ? " · " + fmtPct(p.ok / total) + " of checks OK in the last 24 h" : ""),
-      health ? '<span class="tile-health"><span class="dot ' + health + '"></span>Collector ' +
-        (health === "up" ? "healthy" : health === "amber" ? "partly failing" : "failing") + "</span>" : ""]);
+    /* The check counts come from the same file, so a stalled collector cannot vouch for itself. */
+    var stale = state.summary && isStale(state.summary);
+    if (stale) {
+      tiles.push(["Price changes logged", fmtInt(revisions), win,
+        '<span class="tile-health"><span class="dot down"></span>No new data since ' + esc(dateTime(s.generated_at) + " " + tzName(s.generated_at)) + "</span>"]);
+    } else {
+      tiles.push(["Price changes logged", fmtInt(revisions), win + (total ? " · " + fmtPct(p.ok / total) + " of checks OK in the last 24 h" : ""),
+        health ? '<span class="tile-health"><span class="dot ' + health + '"></span>Collector ' +
+          (health === "up" ? "healthy" : health === "amber" ? "partly failing" : "failing") + "</span>" : ""]);
+    }
     $("stats").innerHTML = tiles.map(function (t) {
       return '<div class="stat"><dt>' + esc(t[0]) + '</dt><dd><span class="v">' + t[1] + "</span>" + (t[3] || "") +
         '<span class="s">' + esc(t[2]) + "</span></dd></div>";
@@ -1970,10 +1980,33 @@
     if (!(e.target.closest && e.target.closest(".term, [data-tip]"))) hideTip();
   });
 
+  /* The revision log, or null when it cannot be loaded (the page then works without one). */
+  function loadRevisions() {
+    return fetchJson("/data/revisions.json").then(function (rev) {
+      return rev && rev.schema === 1 ? rev.revisions : null;
+    }).catch(function () { return null; });
+  }
+
+  /* Fetches both files again and redraws the page when the summary is newer than the one shown.
+     Everything renderAll draws is replaced rather than added to, and the listeners on the page
+     are bound once, so a redraw is the same as the one a time-zone change already does. */
+  var refreshedAt = Date.now();
+  function refresh() {
+    refreshedAt = Date.now();
+    Promise.all([fetchJson("/data/summary.json"), loadRevisions()]).then(function (got) {
+      var summary = got[0];
+      if (!summary || summary.schema !== 1 || !(Date.parse(summary.generated_at) > Date.parse(state.summary.generated_at))) return;
+      state.summary = summary;
+      if (got[1]) state.revisions = got[1];
+      renderAll();
+      renderCitation(summary);
+    }).catch(function (err) {
+      if (window.console) console.warn("data refresh failed:", err.message || err);
+    });
+  }
+
   /* Both files are requested at once; a revision log that fails to load is an empty one. */
-  var revisionsRequest = fetchJson("/data/revisions.json").then(function (rev) {
-    return rev && rev.schema === 1 ? rev.revisions : [];
-  }).catch(function () { return []; });
+  var revisionsRequest = loadRevisions().then(function (revs) { return revs || []; });
   fetchJson("/data/summary.json").then(function (summary) {
     if (!summary || summary.schema !== 1) throw new Error("unsupported data schema");
     state.summary = summary;
@@ -1991,7 +2024,15 @@
         clearTimeout(t);
         t = setTimeout(function () { renderCharts(); zdRender(); }, 150);
       });
-      setInterval(function () { renderStatus(summary); }, 60000);
+      setInterval(function () {
+        renderStatus(state.summary);
+        renderStats(view().s);
+      }, 60000);
+      /* While the page is open and visible, look for newer data as often as it is published. */
+      setInterval(function () { if (!document.hidden) refresh(); }, REFRESH_MS);
+      document.addEventListener("visibilitychange", function () {
+        if (!document.hidden && Date.now() - refreshedAt >= REFRESH_MS) refresh();
+      });
     });
   }).catch(function (err) {
     if (window.console) console.warn("summary data unavailable:", err.message || err);

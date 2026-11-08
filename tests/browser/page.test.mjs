@@ -313,6 +313,77 @@ test("the summary and the revision log are requested together, and a failed log 
   }
 });
 
+// The fixture is old, so by the real clock it is stale.
+test("when the data is old, the page says so and the collector tile does not claim to be healthy", async () => {
+  const { page, errors, close } = await open();
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const banner = page.locator("#stale-banner");
+    assert.ok(await banner.isVisible());
+    assert.match(await banner.innerText(), /normally refreshes every 15 minutes, so the newest prices may be missing/);
+    assert.doesNotMatch(await banner.innerText(), /hourly/);
+    assert.match(await page.locator("#status-line").innerText(), /^Delayed/);
+    const tile = page.locator("#stats .stat").filter({ hasText: "Price changes logged" });
+    assert.match(await tile.locator(".tile-health").innerText(), /^No new data since 24 Oct, 19:00 UTC$/);
+    assert.equal(await tile.locator(".tile-health .dot.down").count(), 1);
+    assert.doesNotMatch(await tile.innerText(), /healthy|checks OK/i);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// The page's clock starts a few minutes after the summary was generated; the summary changes
+// on the second request, as when the collector publishes again.
+async function openWithClock(generated, later) {
+  let served = 0;
+  const handle = (r) => {
+    const s = structuredClone(SUMMARY);
+    s.generated_at = served++ ? later : generated;
+    s.polls_24h = { ok: 1440, skipped: 0, error: 2 };
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(s) });
+  };
+  const opened = await open({ clock: new Date("2026-11-08T12:00:00Z"), route: { match: "**/data/summary.json", handle } });
+  return { ...opened, served: () => served };
+}
+
+test("fresh data shows no banner and a healthy collector, and the page picks up newer data by itself", async () => {
+  const { page, errors, close, served } = await openWithClock("2026-11-08T11:50:00Z", "2026-11-08T12:10:00Z");
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    assert.equal(await page.locator("#stale-banner").isVisible(), false);
+    assert.match(await page.locator("#status-line").innerText(), /^Live · updated 11:50 UTC/);
+    assert.match(await page.locator("#stats .tile-health").innerText(), /^Collector healthy$/);
+    // Nothing is fetched again before 15 minutes have passed.
+    await page.clock.fastForward("14:00");
+    assert.equal(served(), 1);
+    await page.clock.fastForward("01:30");
+    await page.waitForFunction(() => /updated 12:10 UTC/.test(document.querySelector("#status-line").innerText));
+    assert.equal(served(), 2);
+    assert.match(await page.locator("#cite-text").innerText(), /collected since 21 October 2026/);
+    // The redrawn page still answers a click on the time-zone buttons.
+    await page.locator('.tz button[data-tz="Europe/Stockholm"]').click();
+    assert.match(await page.locator("#status-line").innerText(), /updated 13:10 CET/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("data that stops arriving turns the page to the delayed state without a reload", async () => {
+  const { page, errors, close } = await openWithClock("2026-11-08T11:50:00Z", "2026-11-08T11:50:00Z");
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    assert.equal(await page.locator("#stale-banner").isVisible(), false);
+    await page.clock.fastForward("50:00");
+    await page.locator("#stale-banner").waitFor({ state: "visible" });
+    assert.match(await page.locator("#stats .tile-health").innerText(), /^No new data since 11:50 UTC|^No new data since 8 Nov, 11:50 UTC/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
 // A long zone label takes the room the name and the links need on one row.
 for (const [label, zones] of [["all zones", null], ["a long zone label", ["DK1", "DK2", "NO1", "NO2", "NO3", "NO4", "NO5"]]]) {
   test(`with ${label}, the section links and the name are never cut off and the top bar stays on screen at any width`, async () => {
