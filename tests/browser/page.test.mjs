@@ -384,6 +384,60 @@ test("data that stops arriving turns the page to the delayed state without a rel
   }
 });
 
+// Serves the fixture revision log after `change` has edited a copy of it.
+const REVISIONS = JSON.parse(readFileSync(new URL("../fixtures/data/revisions.json", import.meta.url), "utf8"));
+function routeRevisions(change) {
+  const r = structuredClone(REVISIONS);
+  change(r);
+  return { match: "**/data/revisions.json", handle: (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(r) }) };
+}
+const full = (r) => { r.revisions = Array.from({ length: 500 }, () => r.revisions[0]); };
+
+test("a log that says what it keeps is described that way", async () => {
+  const route = routeRevisions((r) => {
+    full(r);
+    r.kept = { imbalance: 480, imbalance_total: 480, other: 20, other_total: 1200, other_since: "2026-10-23T08:30:00Z" };
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const notes = await page.locator("[data-revcap]").allInnerTexts();
+    assert.equal(notes.length, 2);
+    for (const note of notes) {
+      assert.equal(note, "The log keeps every imbalance price change from the last 7 days (480 of 480) and the newest 20 of 1,200 reserve price changes, " +
+        "back to 23 Oct, 08:30 UTC. The revision log, its CSV and the charts built from it cover only those entries.");
+    }
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("a log that keeps everything has no note about a cap", async () => {
+  const { page, errors, close } = await open();
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    for (const note of await page.locator("[data-revcap]").allInnerTexts()) assert.equal(note, "");
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("without kept, a full log keeps the old wording", async () => {
+  const route = routeRevisions((r) => { full(r); delete r.kept; });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const counted = SUMMARY.groups.reduce((n, g) => n + g.last7.revisions, 0).toLocaleString("en-GB");
+    assert.equal(await page.locator("[data-revcap]").first().innerText(), "The log keeps only the newest 500 entries, back to 24 Oct, 18:44 UTC, " +
+      `while ${counted} changes were counted in the window. The revision log, its CSV and the charts built from it cover only those entries.`);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
 // A long zone label takes the room the name and the links need on one row.
 for (const [label, zones] of [["all zones", null], ["a long zone label", ["DK1", "DK2", "NO1", "NO2", "NO3", "NO4", "NO5"]]]) {
   test(`with ${label}, the section links and the name are never cut off and the top bar stays on screen at any width`, async () => {

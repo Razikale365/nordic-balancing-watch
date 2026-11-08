@@ -27,7 +27,7 @@
     GLOSSARY[d.id.slice(2)] = [text("dt"), text("dd")];
   });
 
-  var state = { tz: load("nbw.tz", "UTC"), zones: load("nbw.zones", null), summary: null, revisions: [], tables: {}, cov: { label: "last 7 days" } };
+  var state = { tz: load("nbw.tz", "UTC"), zones: load("nbw.zones", null), summary: null, revisions: [], tables: {}, kept: null, cov: { label: "last 7 days" } };
   /* A stored value from an older version, or an edited one, must not break every time on the page. */
   if (["UTC", "Europe/Stockholm"].indexOf(state.tz) < 0) state.tz = "UTC";
   function inZones(z) { return !state.zones || state.zones.indexOf(z) >= 0; }
@@ -817,8 +817,16 @@
     var logged = state.revisions.length, counted = sum((s.groups || []).map(function (g) { return (g.last7 && g.last7.revisions) || 0; }));
     var oldest = logged ? state.revisions.reduce(function (m, r) { return r.revised_at < m ? r.revised_at : m; }, state.revisions[0].revised_at) : null;
     var capped = logged >= 500 && oldest;
+    /* Newer logs say what they keep: every imbalance change of the window, then the newest others. */
+    var kp = state.kept, count = function (n) { return typeof n === "number" && isFinite(n) && n >= 0 && n === Math.floor(n); };
+    var keptText = !(kp && ["imbalance", "imbalance_total", "other", "other_total"].every(function (k) { return count(kp[k]); })) ? null
+      : !(kp.other < kp.other_total || kp.imbalance < kp.imbalance_total) ? ""
+      : "The log keeps every imbalance price change from the last 7 days (" + fmtInt(kp.imbalance) + " of " + fmtInt(kp.imbalance_total) +
+        ") and the newest " + fmtInt(kp.other) + " of " + fmtInt(kp.other_total) + " reserve price changes" +
+        (validTime(kp.other_since) ? ", back to " + dateTime(kp.other_since) + " " + tzName(kp.other_since) : "") +
+        ". The revision log, its CSV and the charts built from it cover only those entries.";
     document.querySelectorAll("[data-revcap]").forEach(function (el) {
-      el.textContent = capped ? "The log keeps only the newest " + fmtInt(logged) + " entries, back to " + dateTime(oldest) + " " + tzName(oldest) +
+      el.textContent = keptText != null ? keptText : capped ? "The log keeps only the newest " + fmtInt(logged) + " entries, back to " + dateTime(oldest) + " " + tzName(oldest) +
         ", while " + fmtInt(counted) + " changes were counted in the window. The revision log, its CSV and the charts built from it cover only those entries." : "";
     });
     var currency = sum((s.groups || []).map(function (g) { return (g.last7 && g.last7.currency_recalculations) || 0; }));
@@ -1983,7 +1991,7 @@
   /* The revision log, or null when it cannot be loaded (the page then works without one). */
   function loadRevisions() {
     return fetchJson("/data/revisions.json").then(function (rev) {
-      return rev && rev.schema === 1 ? rev.revisions : null;
+      return rev && rev.schema === 1 ? { list: rev.revisions, kept: rev.kept || null } : null;
     }).catch(function () { return null; });
   }
 
@@ -1997,7 +2005,7 @@
       var summary = got[0];
       if (!summary || summary.schema !== 1 || !(Date.parse(summary.generated_at) > Date.parse(state.summary.generated_at))) return;
       state.summary = summary;
-      if (got[1]) state.revisions = got[1];
+      if (got[1]) { state.revisions = got[1].list; state.kept = got[1].kept; }
       renderAll();
       renderCitation(summary);
     }).catch(function (err) {
@@ -2006,12 +2014,13 @@
   }
 
   /* Both files are requested at once; a revision log that fails to load is an empty one. */
-  var revisionsRequest = loadRevisions().then(function (revs) { return revs || []; });
+  var revisionsRequest = loadRevisions().then(function (rev) { return rev || { list: [], kept: null }; });
   fetchJson("/data/summary.json").then(function (summary) {
     if (!summary || summary.schema !== 1) throw new Error("unsupported data schema");
     state.summary = summary;
-    return revisionsRequest.then(function (revs) {
-      state.revisions = revs;
+    return revisionsRequest.then(function (rev) {
+      state.revisions = rev.list;
+      state.kept = rev.kept;
       document.querySelectorAll("[data-needs-data]").forEach(function (el) { el.hidden = false; });
       renderAll();
       renderCitation(summary);
