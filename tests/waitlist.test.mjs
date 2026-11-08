@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { onRequestPost, onRequest } from "../functions/api/waitlist.js";
+import { createHash } from "node:crypto";
+import { onRequestPost, onRequestDelete, onRequest } from "../functions/api/waitlist.js";
 
 const URL = "https://nbw.example.pages.dev/api/waitlist";
 
-function fakeDb(calls) {
+function fakeDb(calls, changes = 1) {
   return {
     prepare(sql) {
       const entry = { sql, args: null };
@@ -12,20 +13,23 @@ function fakeDb(calls) {
       return {
         bind(...args) {
           entry.args = args;
-          return { run: async () => ({ success: true, meta: { changes: 1 } }) };
+          return { run: async () => ({ success: true, meta: { changes } }) };
         }
       };
     }
   };
 }
 
-function post(body, headers = {}) {
+function post(body, headers = {}, method = "POST") {
   return new Request(URL, {
-    method: "POST",
+    method,
     headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(body)
   });
 }
+
+const sha256 = (s) => createHash("sha256").update(s).digest("hex");
+const TOKEN = "A".repeat(43);
 
 test("valid signup is stored lower-cased and returns ok", async () => {
   const calls = [];
@@ -34,12 +38,89 @@ test("valid signup is stored lower-cased and returns ok", async () => {
     env: { DB: fakeDb(calls) }
   });
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { ok: true });
+  const body = await res.json();
+  assert.equal(body.ok, true);
   assert.equal(calls.length, 1);
   assert.match(calls[0].sql, /INSERT INTO waitlist/);
   assert.match(calls[0].sql, /ON CONFLICT\(email\) DO NOTHING/);
   assert.equal(calls[0].args[0], "trader@example.com");
   assert.equal(calls[0].args[1], "trader");
+  // The removal token is returned, and only its hash is stored.
+  assert.match(body.removeToken, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(calls[0].args[3], sha256(body.removeToken));
+  assert.ok(!calls[0].args.includes(body.removeToken));
+});
+
+test("each signup gets a different removal token", async () => {
+  const tokens = new Set();
+  for (let i = 0; i < 20; i++) {
+    const res = await onRequestPost({ request: post({ email: "a@b.co" }), env: { DB: fakeDb([]) } });
+    tokens.add((await res.json()).removeToken);
+  }
+  assert.equal(tokens.size, 20);
+});
+
+test("an address already listed gets the same answer and its stored link is kept", async () => {
+  // ON CONFLICT DO NOTHING: changes = 0, the earlier hash stays; the answer looks the same.
+  const res = await onRequestPost({
+    request: post({ email: "a@b.co" }),
+    env: { DB: fakeDb([], 0) }
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.ok, true);
+  assert.match(body.removeToken, /^[A-Za-z0-9_-]{43}$/);
+});
+
+test("a removal link deletes the address it was issued for", async () => {
+  const calls = [];
+  const res = await onRequestDelete({
+    request: post({ token: TOKEN }, {}, "DELETE"),
+    env: { DB: fakeDb(calls, 1) }
+  });
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { ok: true, removed: true });
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].sql, /^DELETE FROM waitlist WHERE remove_hash = \?1$/);
+  assert.deepEqual(calls[0].args, [sha256(TOKEN)]);
+});
+
+test("a used or unknown removal link removes nothing and says so", async () => {
+  const res = await onRequestDelete({
+    request: post({ token: TOKEN }, {}, "DELETE"),
+    env: { DB: fakeDb([], 0) }
+  });
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { ok: true, removed: false });
+});
+
+test("a malformed removal token gets 400 and touches nothing", async () => {
+  for (const token of ["", "short", "A".repeat(44), "A".repeat(42) + "=", 12345, null]) {
+    const calls = [];
+    const res = await onRequestDelete({
+      request: post({ token }, {}, "DELETE"),
+      env: { DB: fakeDb(calls) }
+    });
+    assert.equal(res.status, 400, String(token));
+    assert.equal(calls.length, 0);
+  }
+});
+
+test("removal refuses foreign origins, non-JSON bodies and a missing DB", async () => {
+  const calls = [];
+  let res = await onRequestDelete({
+    request: post({ token: TOKEN }, { origin: "https://evil.example" }, "DELETE"),
+    env: { DB: fakeDb(calls) }
+  });
+  assert.equal(res.status, 403);
+  res = await onRequestDelete({
+    request: post({ token: TOKEN }, { "content-type": "text/plain" }, "DELETE"),
+    env: { DB: fakeDb(calls) }
+  });
+  assert.equal(res.status, 415);
+  assert.equal(calls.length, 0);
+  res = await onRequestDelete({ request: post({ token: TOKEN }, {}, "DELETE"), env: {} });
+  assert.equal(res.status, 503);
 });
 
 test("bad email gets 400 and stores nothing", async () => {
@@ -130,6 +211,7 @@ test("responses are never cached or sniffed", async () => {
   for (const res of [
     await onRequestPost({ request: post({ email: "a@b.co" }), env: { DB: fakeDb([]) } }),
     await onRequestPost({ request: post({ email: "nope" }), env: {} }),
+    await onRequestDelete({ request: post({ token: TOKEN }, {}, "DELETE"), env: { DB: fakeDb([]) } }),
     onRequest()
   ]) {
     assert.equal(res.headers.get("x-content-type-options"), "nosniff");

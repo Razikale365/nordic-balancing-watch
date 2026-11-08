@@ -1290,8 +1290,9 @@
   function renderWaitlist() {
     if (CFG.waitlist === false) { $("waitlist-section").hidden = true; return; }
     if (CFG.contactEmail) {
-      $("wl-contact").innerHTML = ' by writing to <a href="mailto:' + esc(CFG.contactEmail) + '">' + esc(CFG.contactEmail) + "</a>";
+      $("wl-contact").innerHTML = ', or by writing to <a href="mailto:' + esc(CFG.contactEmail) + '">' + esc(CFG.contactEmail) + "</a>";
     }
+    bindWaitlistRemoval();
     $("waitlist-form").addEventListener("submit", function (e) {
       e.preventDefault();
       var msg = $("wl-msg"), email = $("wl-email").value.trim();
@@ -1306,11 +1307,59 @@
         body: JSON.stringify({ email: email, role: $("wl-role").value, website: $("wl-website").value })
       }).then(function (res) {
         return res.json().catch(function () { return { ok: false }; }).then(function (j) {
-          if (res.ok && j.ok) { msg.textContent = "Thanks, you are on the list."; msg.className = "ok"; e.target.reset(); }
+          if (res.ok && j.ok) {
+            msg.textContent = "Thanks, you are on the list."; msg.className = "ok"; e.target.reset();
+            if (typeof j.removeToken === "string" && REMOVE_TOKEN.test(j.removeToken)) {
+              var link = location.origin + location.pathname + "#remove=" + j.removeToken;
+              $("wl-link-a").href = link; $("wl-link-a").textContent = link;
+              $("wl-link").hidden = false;
+            }
+          }
           else { msg.textContent = "Could not save that address" + (j && j.error ? ": " + j.error : "."); msg.className = "err"; }
         });
       }).catch(function () {
         msg.textContent = "Could not reach the server. Please try again later."; msg.className = "err";
+      });
+    });
+  }
+
+  /* A removal link is /#remove=<token>. The token stays in the fragment, so it is never sent in a
+     request URL or Referer; it is read once, cleared from the address bar and sent only in the
+     body of the removal request. Nothing is removed until the button is pressed. */
+  var REMOVE_TOKEN = /^[A-Za-z0-9_-]{43}$/;
+
+  function bindWaitlistRemoval() {
+    var m = /^#remove=(.*)$/.exec(location.hash);
+    if (!m) return;
+    history.replaceState(null, "", location.pathname + location.search);
+    var token = m[1], panel = $("wl-remove"), msg = $("wl-remove-msg"), btn = $("wl-remove-btn");
+    panel.hidden = false;
+    panel.scrollIntoView({ block: "center" });
+    if (!REMOVE_TOKEN.test(token)) {
+      msg.textContent = "This removal link is incomplete. Copy the whole link and try again.";
+      msg.className = "err"; btn.disabled = true; return;
+    }
+    btn.addEventListener("click", function () {
+      btn.disabled = true; msg.className = ""; msg.textContent = "Removing…";
+      fetch("/api/waitlist", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: token })
+      }).then(function (res) {
+        return res.json().catch(function () { return { ok: false }; }).then(function (j) {
+          if (res.ok && j.ok && j.removed) {
+            msg.textContent = "Your address has been removed from the waitlist."; msg.className = "ok";
+          } else if (res.ok && j.ok) {
+            msg.textContent = "This link does not match an address on the list. It may have been used already.";
+            msg.className = "err";
+          } else {
+            msg.textContent = "Could not remove the address" + (j && j.error ? ": " + j.error : ".");
+            msg.className = "err"; btn.disabled = false;
+          }
+        });
+      }).catch(function () {
+        msg.textContent = "Could not reach the server. Please try again later."; msg.className = "err";
+        btn.disabled = false;
       });
     });
   }

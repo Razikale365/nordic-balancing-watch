@@ -655,6 +655,12 @@ td .muted, .muted { color: var(--muted); }
 #wl-msg.ok { color: var(--good); }
 #wl-msg.err { color: var(--bad); }
 .hp { position: absolute; left: -9999px; }
+.wl-link { font-size: 13px; color: var(--ink-2); margin-top: 12px; overflow-wrap: anywhere; }
+.wl-remove { grid-column: 1 / -1; border-top: 1px solid var(--border); padding-top: 18px; }
+.wl-remove h3 { font-size: 17px; }
+.wl-remove .actions { margin-top: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+#wl-remove-msg.ok { color: var(--good); }
+#wl-remove-msg.err { color: var(--bad); }
 
 .site-footer { margin-top: 56px; border-top: 1px solid var(--border); padding: 28px 0 40px; font-size: 13.5px; color: var(--ink-2); }
 .site-footer .cols { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; }

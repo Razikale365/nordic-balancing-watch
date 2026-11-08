@@ -174,7 +174,7 @@ test("only blocks that need data are hidden until it loads", () => {
   for (const el of all(doc, (e) => hasAttr(e, "hidden"))) {
     const id = attr(el, "id");
     const known = hasAttr(el, "data-needs-data") ||
-      ["stale-banner", "empty-state", "trend", "zp-pop", "cite-copy"].includes(id);
+      ["stale-banner", "empty-state", "trend", "zp-pop", "cite-copy", "wl-link", "wl-remove"].includes(id);
     assert.ok(known, `unexpected hidden <${el.tag} ${el.attrs.trim()}>`);
     if (hasAttr(el, "data-needs-data")) {
       // Text a crawler should see must not live inside a block that waits for data.

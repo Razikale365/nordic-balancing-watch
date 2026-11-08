@@ -29,7 +29,8 @@ history it rests on.
 - Every table can be searched, filtered, sorted, reordered, trimmed to chosen columns and
   downloaded as CSV. Times can be shown in UTC or Nordic time.
 - A waitlist form ("get revision alerts and API access") backed by a Cloudflare D1 table
-  through one Pages Function. No tracking, no cookies, no accounts.
+  through one Pages Function. No tracking, no cookies, no accounts. Each sign-up gets a private
+  link (`/#remove=<token>`) that removes the address; only a SHA-256 hash of the token is stored.
 
 The page is plain HTML, CSS and JavaScript with inline SVG charts: no build step and no
 third-party scripts.
@@ -121,6 +122,9 @@ final domain.
 - The waitlist accepts only same-origin JSON bodies of at most 2 KB, validates both fields
   and stores them with bound SQL parameters. Its response does not reveal whether an
   address was already on the list.
+- Removal (`DELETE /api/waitlist` with the token from the sign-up link) has the same checks.
+  A second sign-up with a listed address gets a token that is not stored, so knowing an
+  address is not enough to remove it.
 - Everything from the data files is escaped before it reaches the page, and prices that are
   not numbers are shown as a dash.
 - The workflows pin every action to a commit SHA, do not keep the git token after checkout,
