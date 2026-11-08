@@ -70,9 +70,11 @@
     var s = (x * 100).toFixed(d);
     return x > 0 && Number(s) === 0 ? "<" + Math.pow(10, -d).toFixed(d) + "%" : s + "%";
   }
-  /* "2 in 5", "1 in 6": the nearest simple fraction, for plain-language sentences. */
+  /* "2 in 5", "1 in 6": the nearest simple fraction, for plain-language sentences. A share
+     under a tenth is "1 in N" with N rounded to two significant digits ("1 in 5,900"). */
   function simpleFraction(x) {
-    var c = [[1, 2], [2, 5], [1, 3], [1, 4], [1, 5], [1, 6], [1, 8], [1, 10], [1, 20], [1, 50], [1, 100]];
+    if (x > 0 && x < 0.1) return "1 in " + fmtInt(Number((1 / x).toPrecision(2)));
+    var c = [[1, 2], [2, 5], [1, 3], [1, 4], [1, 5], [1, 6], [1, 8], [1, 10]];
     var best = c.reduce(function (b, f) { return Math.abs(f[0] / f[1] - x) < Math.abs(b[0] / b[1] - x) ? f : b; });
     return best[0] === 1 && best[1] === 2 ? "half" : best[0] + " in " + best[1];
   }

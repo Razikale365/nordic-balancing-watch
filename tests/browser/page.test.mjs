@@ -244,6 +244,30 @@ test("without max_start the outlier note names the one series", async () => {
   }
 });
 
+// A small share is stated as "1 in N" with two significant digits, not rounded up to 1 in 100.
+for (const [published, revised, sentence] of [
+  [639, 1, "About 1 in 640 (0.2%, 1 of 639) of the first prices ENTSO-E showed for Finland (FI) were changed later"],
+  [17773, 3, "About 1 in 5,900 (<0.1%, 3 of 17,773) of the first prices ENTSO-E showed for Finland (FI) were changed later"],
+  [100, 12, "About 1 in 8 (12%, 12 of 100) of the first prices ENTSO-E showed for Finland (FI) were changed later"]
+]) {
+  test(`the plain-language share when ${revised} of ${published} first prices were changed`, async () => {
+    const route = routeSummary((s) => {
+      s.groups.filter((g) => g.data === "imbalance").forEach((g) => { g.last7.revised = 0; g.last7.revised_share = 0; });
+      Object.assign(group(s, "entsoe", "FI").last7, { published, revised, revised_share: revised / published });
+    });
+    const { page, errors, close } = await open({ route });
+    try {
+      await page.locator("#findings li").first().waitFor();
+      const found = (await page.locator("#findings li").allInnerTexts()).filter((t) => t.startsWith("About "));
+      assert.equal(found.length, 1);
+      assert.ok(found[0].startsWith(sentence), found[0]);
+      assert.deepEqual(errors, []);
+    } finally {
+      await close();
+    }
+  });
+}
+
 // A long zone label takes the room the name and the links need on one row.
 for (const [label, zones] of [["all zones", null], ["a long zone label", ["DK1", "DK2", "NO1", "NO2", "NO3", "NO4", "NO5"]]]) {
   test(`with ${label}, the section links and the name are never cut off and the top bar stays on screen at any width`, async () => {
