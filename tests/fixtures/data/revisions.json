@@ -1,6 +1,7 @@
 {
   "schema": 1,
   "generated_at": "2026-10-24T19:00:00Z",
+  "kept": {"imbalance": 3, "imbalance_total": 3, "other": 3, "other_total": 3, "other_since": "2026-10-23T08:30:00Z"},
   "revisions": [
     {
       "source": "esett", "data": "imbalance", "zone": "DK1",

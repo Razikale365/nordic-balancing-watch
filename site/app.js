@@ -55,6 +55,8 @@
     return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
   }
   function uniq(a) { return a.filter(function (x, i) { return a.indexOf(x) === i; }); }
+  /* "a, b and c" */
+  function joinList(a) { return a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1]; }
   function cat(source) { return CAT[source] || "tso"; }
   function catColor(c) { return "var(--s-" + c + ")"; }
   function country(zone) { return COUNTRY[zone.slice(0, 2)] || zone; }
@@ -716,6 +718,46 @@
     return by;
   }
 
+  /* "7–10 h", from slowest-interval delays in minutes. */
+  function hoursSpan(lo, hi) {
+    var a = Math.round(lo / 60), b = Math.round(hi / 60);
+    return a === b ? "about " + a + " h" : a + "–" + b + " h";
+  }
+  /* The slowest 15-minute interval of several sources can be the very same interval: the
+     groups whose slowest interval started at one moment, at least 6 hours late, in at least
+     two source categories. The collector adds last7.max_start; without it nothing is shared. */
+  function sharedSlowest(imb) {
+    var by = {};
+    imb.forEach(function (g) {
+      var l = g.last7;
+      if (!validTime(l.max_start) || !(l.max >= 360)) return;
+      (by[l.max_start] = by[l.max_start] || []).push(g);
+    });
+    var best = null;
+    Object.keys(by).forEach(function (start) {
+      var gs = by[start];
+      if (gs.length < 2 || uniq(gs.map(function (g) { return cat(g.source); })).length < 2) return;
+      var top = Math.max.apply(null, gs.map(function (g) { return g.last7.max; }));
+      if (!best || gs.length > best.groups.length || (gs.length === best.groups.length && top > best.top)) {
+        best = { start: start, groups: gs, top: top };
+      }
+    });
+    if (!best) return null;
+    var maxes = best.groups.map(function (g) { return g.last7.max; });
+    var bySrc = {};
+    best.groups.forEach(function (g) { (bySrc[g.source] = bySrc[g.source] || []).push(g.zone); });
+    best.names = Object.keys(bySrc).sort(function (a, b) { return CAT_ORDER.indexOf(cat(a)) - CAT_ORDER.indexOf(cat(b)) || (SRC_LABEL[a] < SRC_LABEL[b] ? -1 : 1); }).map(function (k) {
+      return SRC_LABEL[k] + " (" + zoneRange(bySrc[k]) + ")";
+    });
+    best.span = hoursSpan(Math.min.apply(null, maxes), Math.max.apply(null, maxes));
+    best.every = CAT_ORDER.every(function (c) {
+      return !imb.some(function (g) { return cat(g.source) === c; }) ||
+        best.groups.some(function (g) { return cat(g.source) === c; });
+    });
+    best.at = dateTime(best.start) + " " + tzName(best.start);
+    return best;
+  }
+
   /* ---------- sections ---------- */
 
   /* The statistics use a rolling 7-day window. Until 7 days have been collected the window
@@ -860,6 +902,12 @@
     if (gaps.length) {
       out.push(term("esett", "eSett") + ", where the money is settled, shows the same prices <b>" +
         Math.round(Math.min.apply(null, gaps)) + "–" + Math.round(Math.max.apply(null, gaps)) + " minutes later</b>.");
+    }
+    var shared = sharedSlowest(imb);
+    if (shared) {
+      out.push("One 15-minute price, the one starting <b>" + esc(shared.at) + "</b>, first appeared <b>" + esc(shared.span) +
+        "</b> after it ended at " + (shared.every ? "<b>every source</b>: " : "the sources that share it: ") + esc(joinList(shared.names)) +
+        ", so the delay began before publication rather than at one publisher.");
     }
     var top = imb.filter(function (g) { return g.last7.published >= 20 && g.last7.revised_share > 0; })
       .sort(function (a, b) { return b.last7.revised_share - a.last7.revised_share; })[0];
@@ -1009,10 +1057,23 @@
     dotRange($("delay-chart"), rows, { axis: "minutes after the interval ends" });
     var slow = imb.filter(function (g) { return g.last7.max != null && g.last7.p95 != null && g.last7.max > 3 * g.last7.p95; })
       .sort(function (a, b) { return b.last7.max - a.last7.max; })[0];
-    $("delay-callout").innerHTML = slow
+    /* When several sources saw their slowest price for the same interval, it is not one series' outlier. */
+    var shared = slow && sharedSlowest(imb);
+    var together = shared && shared.groups.indexOf(slow) >= 0 ? shared : null;
+    $("delay-callout").innerHTML = together
+      ? "Outlier: one 15-minute price, the one starting " + esc(together.at) + ", took <b>" + esc(together.span) +
+        "</b> to appear at " + esc(joinList(together.names)) + " alike, against 95th percentiles of " + p95Range(together.groups) + "."
+      : slow
       ? "Outlier: one " + esc(SRC_LABEL[slow.source]) + " " + esc(slow.zone) + " price took <b>" + fmtDur(slow.last7.max) +
         "</b>, against a 95th percentile of " + fmtMin(slow.last7.p95) + "."
       : "";
+  }
+
+  function p95Range(gs) {
+    var v = gs.map(function (g) { return g.last7.p95; }).filter(function (x) { return x != null; });
+    if (!v.length) return "—";
+    var lo = Math.round(Math.min.apply(null, v)), hi = Math.round(Math.max.apply(null, v));
+    return lo === hi ? lo + " min" : lo + "–" + hi + " min";
   }
 
   function renderShare(s) {

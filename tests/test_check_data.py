@@ -68,6 +68,55 @@ def test_bad_currency_recalculation_count_fails(tmp_path):
     assert "currency_recalculations" in res.stderr
 
 
+def test_bad_max_start_fails(tmp_path):
+    def breakit(s):
+        s["groups"][0]["last7"]["max_start"] = "2026-10-22 13:00"
+    res = run_check(make_dir(tmp_path, summary=breakit))
+    assert res.returncode != 0
+    assert "max_start" in res.stderr
+
+
+def test_null_max_start_passes(tmp_path):
+    def change(s):
+        s["groups"][0]["last7"]["max_start"] = None
+    res = run_check(make_dir(tmp_path, summary=change))
+    assert res.returncode == 0, res.stderr
+
+
+def test_bad_http_counts_fail(tmp_path):
+    def breakit(s):
+        s["http_24h"][0]["non_200"] = -1
+        s["http_24h"][1]["retry_sleep_s"] = "4"
+    res = run_check(make_dir(tmp_path, summary=breakit))
+    assert res.returncode != 0
+    assert "http_24h[0]: non_200" in res.stderr and "http_24h[1]: retry_sleep_s" in res.stderr
+
+
+def test_http_counts_must_be_a_list(tmp_path):
+    def breakit(s):
+        s["http_24h"] = {"esett": 1}
+    res = run_check(make_dir(tmp_path, summary=breakit))
+    assert res.returncode != 0
+    assert "http_24h must be a list" in res.stderr
+
+
+def test_bad_kept_fails(tmp_path):
+    def breakit(r):
+        r["kept"]["other"] = -1
+        r["kept"]["imbalance_total"] = 2.5
+        r["kept"]["other_since"] = "yesterday"
+    res = run_check(make_dir(tmp_path, revisions=breakit))
+    assert res.returncode != 0
+    assert "kept.other must" in res.stderr and "kept.imbalance_total" in res.stderr and "kept.other_since" in res.stderr
+
+
+def test_kept_with_no_reserve_changes_passes(tmp_path):
+    def change(r):
+        r["kept"].update({"other": 0, "other_total": 0, "other_since": None})
+    res = run_check(make_dir(tmp_path, revisions=change))
+    assert res.returncode == 0, res.stderr
+
+
 def test_missing_required_key_fails(tmp_path):
     def breakit(r):
         del r["revisions"][0]["revised_at"]

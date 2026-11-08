@@ -164,6 +164,86 @@ for (const [label, published, revised, value, sub] of [
   });
 }
 
+// Serves the fixture summary after `change` has edited a copy of it.
+function routeSummary(change) {
+  const s = structuredClone(SUMMARY);
+  change(s);
+  return { match: "**/data/summary.json", handle: (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(s) }) };
+}
+const group = (s, source, zone) => s.groups.find((g) => g.data === "imbalance" && g.source === source && g.zone === zone);
+// The three imbalance series of the fixture, each with its slowest price on the same interval.
+function shareSlowest(s) {
+  for (const [source, zone, max] of [["esett", "DK1", 615], ["esett", "DK2", 430], ["entsoe", "FI", 400]]) {
+    Object.assign(group(s, source, zone).last7, { max, max_start: "2026-10-23T02:15:00Z" });
+  }
+}
+
+test("when the slowest price of several sources is the same interval, the findings and the outlier note say so", async () => {
+  const { page, errors, close } = await open({ route: routeSummary(shareSlowest) });
+  try {
+    await page.locator("#findings li").first().waitFor();
+    const found = (await page.locator("#findings li").allInnerTexts()).filter((t) => /^One 15-minute price/.test(t));
+    assert.equal(found.length, 1);
+    assert.equal(found[0], "One 15-minute price, the one starting 23 Oct, 02:15 UTC, first appeared 7–10 h after it ended at every source: " +
+      "eSett (DK1, DK2) and ENTSO-E (FI), so the delay began before publication rather than at one publisher.");
+    assert.equal(await page.locator("#delay-callout").innerText(), "Outlier: one 15-minute price, the one starting 23 Oct, 02:15 UTC, " +
+      "took 7–10 h to appear at eSett (DK1, DK2) and ENTSO-E (FI) alike, against 95th percentiles of 88–96 min.");
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("a shared slowest interval does not say every source when a source category does not share it", async () => {
+  const route = routeSummary((s) => {
+    shareSlowest(s);
+    const fin = structuredClone(group(s, "entsoe", "FI"));
+    s.groups.push(Object.assign(fin, { source: "fingrid" }));
+    fin.last7.max_start = "2026-10-22T10:00:00Z";
+    s.groups.sort((a, b) => (a.source + a.data + a.zone < b.source + b.data + b.zone ? -1 : 1));
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#findings li").first().waitFor();
+    const found = (await page.locator("#findings li").allInnerTexts()).filter((t) => /^One 15-minute price/.test(t));
+    assert.equal(found.length, 1);
+    assert.match(found[0], /after it ended at the sources that share it: eSett \(DK1, DK2\) and ENTSO-E \(FI\), so the delay began before publication/);
+    assert.doesNotMatch(found[0], /every source/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+for (const [label, change] of [
+  ["max_start is absent", (s) => { shareSlowest(s); s.groups.forEach((g) => delete g.last7.max_start); }],
+  ["the sources do not share the interval", (s) => { shareSlowest(s); group(s, "entsoe", "FI").last7.max_start = "2026-10-22T10:00:00Z"; }],
+  ["only one source category shares it", (s) => { shareSlowest(s); group(s, "entsoe", "FI").last7.max_start = null; }],
+  ["the shared delay is under six hours", (s) => { shareSlowest(s); s.groups.forEach((g) => { if (g.last7.max_start) g.last7.max = 300; }); }]
+]) {
+  test(`the page reads as before when ${label}`, async () => {
+    const { page, errors, close } = await open({ route: routeSummary(change) });
+    try {
+      await page.locator("#findings li").first().waitFor();
+      assert.doesNotMatch(await page.locator("#findings").innerText(), /One 15-minute price/);
+      assert.doesNotMatch(await page.locator("#delay-callout").innerText(), /15-minute price/);
+      assert.deepEqual(errors, []);
+    } finally {
+      await close();
+    }
+  });
+}
+
+test("without max_start the outlier note names the one series", async () => {
+  const { page, close } = await open({ route: routeSummary((s) => s.groups.forEach((g) => delete g.last7.max_start)) });
+  try {
+    await page.locator("#findings li").first().waitFor();
+    assert.equal(await page.locator("#delay-callout").innerText(), "Outlier: one eSett DK1 price took 10 h, against a 95th percentile of 92 min.");
+  } finally {
+    await close();
+  }
+});
+
 // A long zone label takes the room the name and the links need on one row.
 for (const [label, zones] of [["all zones", null], ["a long zone label", ["DK1", "DK2", "NO1", "NO2", "NO3", "NO4", "NO5"]]]) {
   test(`with ${label}, the section links and the name are never cut off and the top bar stays on screen at any width`, async () => {

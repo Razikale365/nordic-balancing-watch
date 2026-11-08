@@ -75,6 +75,9 @@ def check_last7(l, where, errors):
     # Added 2026-10-28; older data files do not have it.
     if "currency_recalculations" in l and not is_nonneg_int(l["currency_recalculations"]):
         errors.append(f"{where}: last7.currency_recalculations must be a non-negative integer")
+    # Optional: the start of the 15-minute interval behind `max`.
+    if l.get("max_start") is not None and not is_ts(l["max_start"]):
+        errors.append(f"{where}: last7.max_start must be an ISO timestamp ending in Z or null")
     for k in ("p50", "p95", "max", "lag_p50_h", "lag_max_h"):
         if l.get(k) is not None and not is_num(l.get(k)):
             errors.append(f"{where}: last7.{k} must be a number or null")
@@ -98,6 +101,7 @@ def check_summary(data, errors):
         for k in ("ok", "skipped", "error"):
             if not is_nonneg_int(polls.get(k)):
                 errors.append(f"{name}: polls_24h.{k} must be a non-negative integer")
+    check_http(data.get("http_24h"), errors)
     groups = data.get("groups")
     if not isinstance(groups, list):
         errors.append(f"{name}: groups must be a list")
@@ -146,6 +150,28 @@ def check_summary(data, errors):
     check_now(data.get("now"), errors)
 
 
+def check_http(rows, errors):
+    """Optional per-source HTTP request counts of the last 24 hours."""
+    if rows is None:
+        return
+    name = "summary.json: http_24h"
+    if not isinstance(rows, list):
+        errors.append(f"{name} must be a list")
+        return
+    for i, e in enumerate(rows):
+        where = f"{name}[{i}]"
+        if not isinstance(e, dict):
+            errors.append(f"{where}: must be an object")
+            continue
+        if not is_str(e.get("source")):
+            errors.append(f"{where}: source must be a non-empty string")
+        for k in ("polls", "requests", "non_200"):
+            if not is_nonneg_int(e.get(k)):
+                errors.append(f"{where}: {k} must be a non-negative integer")
+        if not is_num(e.get("retry_sleep_s")):
+            errors.append(f"{where}: retry_sleep_s must be a number")
+
+
 def check_now(now, errors):
     """Optional latest price per source and zone."""
     if now is None:
@@ -172,6 +198,21 @@ def check_now(now, errors):
                 errors.append(f"{where}: {k} must be a number")
 
 
+def check_kept(kept, errors):
+    """Optional description of what the capped log keeps."""
+    if kept is None:
+        return
+    name = "revisions.json: kept"
+    if not isinstance(kept, dict):
+        errors.append(f"{name} must be an object")
+        return
+    for k in ("imbalance", "imbalance_total", "other", "other_total"):
+        if not is_nonneg_int(kept.get(k)):
+            errors.append(f"{name}.{k} must be a non-negative integer")
+    if kept.get("other_since") is not None and not is_ts(kept["other_since"]):
+        errors.append(f"{name}.other_since must be an ISO timestamp ending in Z or null")
+
+
 def check_revisions(data, errors):
     if data is None:
         return
@@ -182,6 +223,7 @@ def check_revisions(data, errors):
         return
     if len(revs) > 500:
         errors.append(f"{name}: more than 500 revisions")
+    check_kept(data.get("kept"), errors)
     prev_at = None
     for i, r in enumerate(revs):
         where = f"{name}: revisions[{i}]"
