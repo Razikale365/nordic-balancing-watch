@@ -821,8 +821,10 @@
     var kp = state.kept, count = function (n) { return typeof n === "number" && isFinite(n) && n >= 0 && n === Math.floor(n); };
     var keptText = !(kp && ["imbalance", "imbalance_total", "other", "other_total"].every(function (k) { return count(kp[k]); })) ? null
       : !(kp.other < kp.other_total || kp.imbalance < kp.imbalance_total) ? ""
-      : "The log keeps every imbalance price change from the last 7 days (" + fmtInt(kp.imbalance) + " of " + fmtInt(kp.imbalance_total) +
-        ") and the newest " + fmtInt(kp.other) + " of " + fmtInt(kp.other_total) + " reserve price changes" +
+      : "The log keeps " + (kp.imbalance === kp.imbalance_total
+          ? "every imbalance price change in the " + state.cov.label + " (" + fmtInt(kp.imbalance) + ")"
+          : "the newest " + fmtInt(kp.imbalance) + " of " + fmtInt(kp.imbalance_total) + " imbalance price changes") +
+        " and the newest " + fmtInt(kp.other) + " of " + fmtInt(kp.other_total) + " reserve price changes" +
         (validTime(kp.other_since) ? ", back to " + dateTime(kp.other_since) + " " + tzName(kp.other_since) : "") +
         ". The revision log, its CSV and the charts built from it cover only those entries.";
     document.querySelectorAll("[data-revcap]").forEach(function (el) {
@@ -939,7 +941,8 @@
         var gs = imb.filter(function (g) { return cat(g.source) === c; });
         return gs.length && gs.every(function (g) { return !g.last7.revisions; });
       }).map(function (c) { return CAT_LABEL[c]; });
-      var share = top.last7.revised_share;
+      /* From the counts: revised_share is rounded to 4 decimals, too coarse for "1 in N". */
+      var share = top.last7.published ? top.last7.revised / top.last7.published : top.last7.revised_share;
       var plain = "About " + simpleFraction(share);
       out.push("<b>" + plain + "</b> (" + fmtPct(share) + ", " + fmtInt(top.last7.revised) + " of " + fmtInt(top.last7.published) + ") of the first prices " + esc(SRC_LABEL[top.source]) + " showed for <b>" +
         esc(country(top.zone)) + (country(top.zone) !== top.zone ? " (" + esc(top.zone) + ")" : "") + "</b> were changed later" +

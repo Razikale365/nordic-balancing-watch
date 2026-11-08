@@ -404,8 +404,29 @@ test("a log that says what it keeps is described that way", async () => {
     const notes = await page.locator("[data-revcap]").allInnerTexts();
     assert.equal(notes.length, 2);
     for (const note of notes) {
-      assert.equal(note, "The log keeps every imbalance price change from the last 7 days (480 of 480) and the newest 20 of 1,200 reserve price changes, " +
+      // The fixture covers the first 3.5 days of collection, and the note names that window.
+      assert.equal(note, "The log keeps every imbalance price change in the first 3.5 days of collection (480) and the newest 20 of 1,200 reserve price changes, " +
         "back to 23 Oct, 08:30 UTC. The revision log, its CSV and the charts built from it cover only those entries.");
+    }
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("a log that had to cut imbalance changes does not claim to keep them all", async () => {
+  const route = routeRevisions((r) => {
+    full(r);
+    r.kept = { imbalance: 500, imbalance_total: 650, other: 0, other_total: 1200, other_since: null };
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const notes = await page.locator("[data-revcap]").allInnerTexts();
+    assert.equal(notes.length, 2);
+    for (const note of notes) {
+      assert.equal(note, "The log keeps the newest 500 of 650 imbalance price changes and the newest 0 of 1,200 reserve price changes. " +
+        "The revision log, its CSV and the charts built from it cover only those entries.");
     }
     assert.deepEqual(errors, []);
   } finally {

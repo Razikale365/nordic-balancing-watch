@@ -96,7 +96,10 @@ def download(base, directory, fetch):
     for name in FILES:
         url = f"{base.rstrip('/')}/data/{name}"
         try:
-            body = fetch(url)
+            try:
+                body = fetch(url)
+            except Exception:  # one retry, so a single dropped request does not raise an alarm
+                body = fetch(url)
         except Exception as e:  # a network error of any kind is a finding, not a crash
             errors.append(f"{name}: could not be downloaded ({e})")
             continue
