@@ -254,6 +254,8 @@ test("on a phone the menus open on screen and the price board and field list rea
     await page.evaluate(() => window.scrollTo(0, 0));
     // The zone panel tells a touch reader to tap, not to hover.
     await page.locator("tr.zd-row").first().click();
+    // The zone's data loads after the panel opens; its note is written with the chart.
+    await page.locator("#zd-chart .zd-hit").waitFor();
     const note = await page.locator("#zd-note").innerText();
     assert.match(note, /tap an interval/);
     assert.doesNotMatch(note, /hover/i);
