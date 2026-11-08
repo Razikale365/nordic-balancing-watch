@@ -268,6 +268,26 @@ for (const [published, revised, sentence] of [
   });
 }
 
+test("the price board gives no percentage against a previous price under 10 EUR/MWh", async () => {
+  const route = routeSummary((s) => {
+    Object.assign(s.now[0], { price: 70.94, prev_price: 3 });
+    Object.assign(s.now[1], { price: 55, prev_price: 50 });
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#board .px").first().waitFor();
+    const cells = page.locator("#board td[data-label]");
+    const jump = cells.filter({ hasText: "70.94" }).locator(".chg");
+    assert.equal((await jump.innerText()).replace(/\s+/g, " "), "▲ +67.94");
+    assert.equal(await jump.locator(".pc").count(), 0);
+    const usual = cells.filter({ hasText: "55.00" }).locator(".chg");
+    assert.equal((await usual.innerText()).replace(/\s+/g, " "), "▲ +5.00 +10%");
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
 // A long zone label takes the room the name and the links need on one row.
 for (const [label, zones] of [["all zones", null], ["a long zone label", ["DK1", "DK2", "NO1", "NO2", "NO3", "NO4", "NO5"]]]) {
   test(`with ${label}, the section links and the name are never cut off and the top bar stays on screen at any width`, async () => {

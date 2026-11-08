@@ -155,11 +155,11 @@
     return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + fill + '"' + stroke + "/>";
   }
   /* Price change, finance style: green up, red down, with the relative change when the
-     base is large enough for a percentage to mean something. */
+     base is large enough for a percentage to mean something (opts.minBase, 1 unless stated). */
   function chg(from, to, opts) {
     if (from == null || to == null) return "";
     var d = to - from, dir = d > 0 ? "up" : d < 0 ? "down" : "flat";
-    var p = Math.abs(from) >= 1 ? d / Math.abs(from) : null;
+    var p = Math.abs(from) >= (opts && opts.minBase || 1) ? d / Math.abs(from) : null;
     var arrow = { up: "▲", down: "▼", flat: "" }[dir];
     var text = dir === "flat" ? "0.00" : (d > 0 ? "+" : "−") + fmtPrice(Math.abs(d));
     return '<span class="chg ' + dir + (opts && opts.plain ? " plain" : "") + '">' + arrow + (arrow ? " " : "") + text +
@@ -1006,7 +1006,7 @@
         var late = limit != null && e.minutes_since_end > limit + 30;
         var isNewest = entries.length > 1 && e === newest && entries.filter(function (x) { return x.interval_start === e.interval_start; }).length === 1;
         return "<td" + lab + '><div class="px-line"><span class="px">' + fmtPrice(e.price) + (zero ? "*" : "") + "</span>" +
-          chg(e.prev_price, e.price) + "</div>" + sparkline(e.recent) +
+          chg(e.prev_price, e.price, { minBase: 10 }) + "</div>" + sparkline(e.recent) +
           '<span class="px-sub">For ' + esc(fmtTime(e.interval_start, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })) +
           " · " + esc(fmtDur(e.minutes_since_end)) + " ago" + (cat(e.source) === "tso" ? " · " + esc(SRC_LABEL[e.source]) : "") + "</span>" +
           (isNewest ? '<span class="badge newest">Newest</span> ' : "") +
