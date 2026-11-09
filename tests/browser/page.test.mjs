@@ -194,6 +194,25 @@ test("when the slowest price of several sources is the same interval, the findin
   }
 });
 
+test("a shared slowest interval does not say every source when one zone of a source does not share it", async () => {
+  // Every source category shares the interval, but eSett DK2's slowest price was another one.
+  const route = routeSummary((s) => {
+    shareSlowest(s);
+    Object.assign(group(s, "esett", "DK2").last7, { max: 500, max_start: "2026-10-22T10:00:00Z" });
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const found = (await page.locator("#findings li").allInnerTexts()).filter((t) => /^One 15-minute price/.test(t));
+    assert.equal(found.length, 1);
+    assert.match(found[0], /after it ended at eSett \(DK1\) and ENTSO-E \(FI\), so the delay began before publication/);
+    assert.doesNotMatch(found[0], /every source/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
 test("a shared slowest interval does not say every source when a source category does not share it", async () => {
   const route = routeSummary((s) => {
     shareSlowest(s);
@@ -207,7 +226,7 @@ test("a shared slowest interval does not say every source when a source category
     await page.locator("#findings li").first().waitFor();
     const found = (await page.locator("#findings li").allInnerTexts()).filter((t) => /^One 15-minute price/.test(t));
     assert.equal(found.length, 1);
-    assert.match(found[0], /after it ended at the sources that share it: eSett \(DK1, DK2\) and ENTSO-E \(FI\), so the delay began before publication/);
+    assert.match(found[0], /after it ended at eSett \(DK1, DK2\) and ENTSO-E \(FI\), so the delay began before publication/);
     assert.doesNotMatch(found[0], /every source/);
     assert.deepEqual(errors, []);
   } finally {

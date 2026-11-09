@@ -756,10 +756,10 @@
       return SRC_LABEL[k] + " (" + zoneRange(bySrc[k]) + ")";
     });
     best.span = hoursSpan(Math.min.apply(null, maxes), Math.max.apply(null, maxes));
-    best.every = CAT_ORDER.every(function (c) {
-      return !imb.some(function (g) { return cat(g.source) === c; }) ||
-        best.groups.some(function (g) { return cat(g.source) === c; });
-    });
+    /* "Every source" only when every imbalance series with data has this as its slowest
+       interval; otherwise the sources and zones that share it are named without it. */
+    best.every = imb.filter(function (g) { return g.last7 && g.last7.n > 0; })
+      .every(function (g) { return g.last7.max_start === best.start; });
     best.at = dateTime(best.start) + " " + tzName(best.start);
     return best;
   }
@@ -931,7 +931,7 @@
     var shared = sharedSlowest(imb);
     if (shared) {
       out.push("One 15-minute price, the one starting <b>" + esc(shared.at) + "</b>, first appeared <b>" + esc(shared.span) +
-        "</b> after it ended at " + (shared.every ? "<b>every source</b>: " : "the sources that share it: ") + esc(joinList(shared.names)) +
+        "</b> after it ended at " + (shared.every ? "<b>every source</b>: " : "") + esc(joinList(shared.names)) +
         ", so the delay began before publication rather than at one publisher.");
     }
     var top = imb.filter(function (g) { return g.last7.published >= 20 && g.last7.revised_share > 0; })

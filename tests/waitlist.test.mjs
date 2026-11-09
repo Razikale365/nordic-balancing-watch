@@ -5,7 +5,7 @@ import { onRequestPost, onRequestDelete, onRequest } from "../functions/api/wait
 
 const URL = "https://nbw.example.pages.dev/api/waitlist";
 
-function fakeDb(calls, changes = 1) {
+function fakeDb(calls, changes = 1, recent = 0) {
   return {
     prepare(sql) {
       const entry = { sql, args: null };
@@ -13,7 +13,10 @@ function fakeDb(calls, changes = 1) {
       return {
         bind(...args) {
           entry.args = args;
-          return { run: async () => ({ success: true, meta: { changes } }) };
+          return {
+            run: async () => ({ success: true, meta: { changes } }),
+            first: async () => ({ n: recent })
+          };
         }
       };
     }
@@ -40,15 +43,18 @@ test("valid signup is stored lower-cased and returns ok", async () => {
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.equal(body.ok, true);
-  assert.equal(calls.length, 1);
-  assert.match(calls[0].sql, /INSERT INTO waitlist/);
-  assert.match(calls[0].sql, /ON CONFLICT\(email\) DO NOTHING/);
-  assert.equal(calls[0].args[0], "trader@example.com");
-  assert.equal(calls[0].args[1], "trader");
+  // First the hourly sign-up count, then the insert.
+  assert.equal(calls.length, 2);
+  assert.match(calls[0].sql, /^SELECT COUNT\(\*\) AS n FROM waitlist WHERE created_at >= \?1$/);
+  const insert = calls[1];
+  assert.match(insert.sql, /INSERT INTO waitlist/);
+  assert.match(insert.sql, /ON CONFLICT\(email\) DO NOTHING/);
+  assert.equal(insert.args[0], "trader@example.com");
+  assert.equal(insert.args[1], "trader");
   // The removal token is returned, and only its hash is stored.
   assert.match(body.removeToken, /^[A-Za-z0-9_-]{43}$/);
-  assert.equal(calls[0].args[3], sha256(body.removeToken));
-  assert.ok(!calls[0].args.includes(body.removeToken));
+  assert.equal(insert.args[3], sha256(body.removeToken));
+  assert.ok(!insert.args.includes(body.removeToken));
 });
 
 test("each signup gets a different removal token", async () => {
@@ -218,4 +224,26 @@ test("responses are never cached or sniffed", async () => {
     assert.equal(res.headers.get("cache-control"), "no-store");
     assert.match(res.headers.get("content-security-policy"), /default-src 'none'/);
   }
+});
+
+test("sign-ups stop for the hour once the hourly limit is reached, and nothing is stored", async () => {
+  const calls = [];
+  const res = await onRequestPost({
+    request: post({ email: "flood@example.com" }),
+    env: { DB: fakeDb(calls, 1, 30) }
+  });
+  assert.equal(res.status, 429);
+  assert.equal((await res.json()).ok, false);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].sql, /^SELECT COUNT/);
+  const since = Date.parse(calls[0].args[0]);
+  assert.ok(Math.abs(Date.now() - 3600 * 1000 - since) < 5000, "counts the last hour");
+});
+
+test("sign-ups below the hourly limit are stored", async () => {
+  const calls = [];
+  const res = await onRequestPost({ request: post({ email: "a@b.co" }), env: { DB: fakeDb(calls, 1, 29) } });
+  assert.equal(res.status, 200);
+  assert.equal(calls.length, 2);
+  assert.match(calls[1].sql, /INSERT INTO waitlist/);
 });
