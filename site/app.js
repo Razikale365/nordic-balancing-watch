@@ -1349,6 +1349,12 @@
     var rows = reserveGroups(s).filter(function (g) { return g.last7.n > 0 || rePriced(g) > 0; });
     var ahead = function (m) { return m == null ? null : -m / 60; };
     var done = rows.some(function (g) { return g.last7.completions != null; });
+    /* Data files from before the completions field keep the old column and its note. */
+    $("restab-note").innerHTML = done
+      ? "&ldquo;Revised&rdquo; counts every change recorded in the <span data-window>" + esc(state.cov.label) + "</span>, " +
+        "including changes to delivery hours from before it; &ldquo;Completed later&rdquo; counts the prices a later auction completed, which are not revisions."
+      : "&ldquo;Price changes&rdquo; counts every change recorded in the <span data-window>" + esc(state.cov.label) + "</span>, " +
+        "including changes to delivery hours from before it.";
     if (state.tables.reserves) { state.tables.reserves.setRows(rows); return; }
     state.tables.reserves = new DataTable($("reserve-table"), {
       id: "reserves", rows: rows, page: 100, csvName: "nordic-reserve-publication.csv",
@@ -1361,7 +1367,7 @@
         { key: "lead", label: "Median lead", csvLabel: "Median lead (h before delivery)", num: true, get: function (g) { return ahead(g.last7.p50); }, html: function (g) { return fmtHours(ahead(g.last7.p50)); } },
         { key: "lead95", label: "95% at least", csvLabel: "95% at least (h before delivery)", num: true, get: function (g) { return ahead(g.last7.p95); }, html: function (g) { return fmtHours(ahead(g.last7.p95)); } },
         { key: "n", label: "Hours", num: true, get: function (g) { return g.last7.n; }, html: function (g) { return fmtInt(g.last7.n); } },
-        { key: "revisions", label: "Revised", num: true, get: function (g) { return g.last7.revisions; }, html: function (g) { return fmtInt(g.last7.revisions); } },
+        { key: "revisions", label: done ? "Revised" : "Price changes", num: true, get: function (g) { return g.last7.revisions; }, html: function (g) { return fmtInt(g.last7.revisions); } },
         done ? { key: "completions", label: "Completed later", num: true, get: function (g) { return g.last7.completions; },
           html: function (g) { return g.last7.completions == null ? "—" : fmtInt(g.last7.completions); } } : null,
         { key: "lag", label: "Typically after", csvLabel: "Typically after (h)", num: true, get: function (g) { return g.last7.lag_p50_h; }, html: function (g) { return fmtHours(g.last7.lag_p50_h); } }
