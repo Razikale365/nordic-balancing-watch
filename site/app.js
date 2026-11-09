@@ -921,6 +921,27 @@
         '<span class="tile-meter" aria-hidden="true"><i style="width:' + Math.max(rev ? 2 : 0, Math.round(rev / pub * 100)) + '%"></i></span>']);
     }
     var revisions = sum((s.groups || []).map(function (g) { return (g.last7 && g.last7.revisions) || 0; }));
+    /* The same correction can be logged once per source; when the log is known to hold every
+       imbalance revision of the window, the tile counts each corrected price once and says
+       how many records that rests on. Logs without kept counts keep the record count. */
+    var kp = state.kept, head = ["Price changes logged", revisions, ""];
+    if (kp && typeof kp.imbalance === "number" && kp.imbalance === kp.imbalance_total) {
+      var seen = {}, srcs = {}, logged = 0, corrected = 0;
+      state.revisions.filter(function (r) { return inZones(r.zone); }).forEach(function (r) {
+        if (isCompletion(r)) return;
+        logged++;
+        srcs[r.source] = true;
+        if (r.data === "imbalance") {
+          var key = [r.zone, r.interval_start, r.old, r.new].join("|");
+          if (seen[key]) return;
+          seen[key] = true;
+        }
+        corrected++;
+      });
+      var m = Object.keys(srcs).length;
+      head = ["Prices corrected", corrected,
+        logged !== corrected ? fmtInt(logged) + " changes logged across " + m + " source" + (m === 1 ? "" : "s") + " · " : ""];
+    }
     var p = s.polls_24h || {}, total = (p.ok || 0) + (p.skipped || 0) + (p.error || 0);
     var health = total ? (p.ok / total >= 0.98 ? "up" : p.ok / total >= 0.9 ? "amber" : "down") : "";
     var win = state.cov.label.charAt(0).toUpperCase() + state.cov.label.slice(1);
@@ -931,10 +952,10 @@
     /* The check counts come from the same file, so a stalled collector cannot vouch for itself. */
     var stale = state.summary && isStale(state.summary);
     if (stale) {
-      tiles.push(["Price changes logged", fmtInt(revisions), win + auction,
+      tiles.push([head[0], fmtInt(head[1]), head[2] + win + auction,
         '<span class="tile-health"><span class="dot down"></span>No new data since ' + esc(dateTime(s.generated_at) + " " + tzName(s.generated_at)) + "</span>"]);
     } else {
-      tiles.push(["Price changes logged", fmtInt(revisions), win + (total ? " · " + fmtPct(p.ok / total) + " of checks OK in the last 24 h" : "") + auction,
+      tiles.push([head[0], fmtInt(head[1]), head[2] + win + (total ? " · " + fmtPct(p.ok / total) + " of checks OK in the last 24 h" : "") + auction,
         health ? '<span class="tile-health"><span class="dot ' + health + '"></span>Collector ' +
           (health === "up" ? "healthy" : health === "amber" ? "partly failing" : "failing") + "</span>" : ""]);
     }

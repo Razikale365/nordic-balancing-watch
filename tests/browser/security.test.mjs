@@ -153,7 +153,7 @@ test("CSV downloads quote text that a spreadsheet would run as a formula", async
     assert.match(csv, /"'=HYPERLINK\(""https:\/\/evil\.example"",""x""\)"/);
     assert.match(csv, /,'@SUM\(1\+1\),/);
     const lines = csv.trim().split("\n").slice(1);
-    assert.ok(lines.length >= 6);
+    assert.ok(lines.length >= 3);
     // Numbers stay numbers, negative ones included.
     assert.ok(!lines.some((l) => l.split(",").some((cell) => /^'-?\d/.test(cell))));
   } finally {

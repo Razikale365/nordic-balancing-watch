@@ -342,7 +342,7 @@ test("when the data is old, the page says so and the collector tile does not cla
     assert.match(await banner.innerText(), /normally refreshes every 15 minutes, so the newest prices may be missing/);
     assert.doesNotMatch(await banner.innerText(), /hourly/);
     assert.match(await page.locator("#status-line").innerText(), /^Delayed/);
-    const tile = page.locator("#stats .stat").filter({ hasText: "Price changes logged" });
+    const tile = page.locator("#stats .stat").filter({ hasText: "Prices corrected" });
     assert.match(await tile.locator(".tile-health").innerText(), /^No new data since 24 Oct, 19:00 UTC$/);
     assert.equal(await tile.locator(".tile-health .dot.down").count(), 1);
     assert.doesNotMatch(await tile.innerText(), /healthy|checks OK/i);
@@ -599,14 +599,15 @@ test("on a phone the menus open on screen and the price board and field list rea
 
 // Auction completions are not revisions: the tile counts only revisions and names them,
 // and every figure or chart keeps them visible but separate, counting a joint-market
-// completion once.
-test("the headline tile counts revisions only and names the completions", async () => {
+// completion once. The fixture logs one correction once per source: the tile counts the
+// corrected price once and says how many records that rests on.
+test("the headline tile counts each corrected price once and names the completions", async () => {
   const { page, errors, close } = await open();
   try {
     await page.locator("#stats .stat").first().waitFor();
-    const tile = page.locator("#stats .stat").filter({ hasText: "Price changes logged" });
-    const revisions = SUMMARY.groups.reduce((n, g) => n + g.last7.revisions, 0).toLocaleString("en-GB");
-    assert.equal(await tile.locator(".v").innerText(), revisions);
+    const tile = page.locator("#stats .stat").filter({ hasText: "Prices corrected" });
+    assert.equal(await tile.locator(".v").innerText(), "1");
+    assert.match(await tile.locator(".s").innerText(), /^3 changes logged across 3 sources · /);
     assert.match(await tile.locator(".s").innerText(), /plus 34 reserve prices completed by a later auction/);
     assert.deepEqual(errors, []);
   } finally {
@@ -619,7 +620,7 @@ test("the chart, the recent list and the log keep completions apart from revisio
   try {
     await page.locator("#stats .stat").first().waitFor();
     // The five zone rows of one auction are one strip, counted once in the busiest hour;
-    // the TSO strip only counts its three real revisions.
+    // the TSO strip only counts its one real revision.
     const strips = await page.locator("#hist-chart .strip").count();
     assert.equal(strips, 4);
     const labels = await page.locator("#hist-chart .strip-label").allInnerTexts();
@@ -630,22 +631,21 @@ test("the chart, the recent list and the log keep completions apart from revisio
     assert.match(tso, /most in an hour: 1/);
     // The recent list still shows each zone, tagged as a completion rather than a revision.
     assert.equal(await page.locator("#recent .tag.completed").count(), 5);
-    assert.match(await page.locator("#recent").innerText(), /\+1 more in the revision log/);
     // The log lists revisions only; the completions join on request, tagged.
     const toggle = page.locator("#rev-table .rev-done");
     assert.match(await toggle.innerText(), /Also list prices completed by a later auction \(1, shown as 5 zone rows\)/);
     assert.equal(await page.locator("#rev-table .tag.completed").count(), 0);
-    assert.equal(await page.locator("#rev-table tbody tr").count(), 6);
-    assert.equal(await page.locator("#rev-table [data-role=count]").innerText(), "6 rows");
+    assert.equal(await page.locator("#rev-table tbody tr").count(), 3);
+    assert.equal(await page.locator("#rev-table [data-role=count]").innerText(), "3 rows");
     await toggle.locator("input").check();
     assert.equal(await page.locator("#rev-table .tag.completed").count(), 5);
-    assert.equal(await page.locator("#rev-table tbody tr").count(), 11);
-    assert.equal(await page.locator("#rev-table [data-role=count]").innerText(), "11 rows");
+    assert.equal(await page.locator("#rev-table tbody tr").count(), 8);
+    assert.equal(await page.locator("#rev-table [data-role=count]").innerText(), "8 rows");
     const heads = (await page.locator("#rev-table thead .th-btn").allInnerTexts()).map((h) => h.toLowerCase());
     assert.ok(heads.includes("type"), heads.join(" | "));
     // Unchecked again, the log is the default revision log.
     await toggle.locator("input").uncheck();
-    assert.equal(await page.locator("#rev-table tbody tr").count(), 6);
+    assert.equal(await page.locator("#rev-table tbody tr").count(), 3);
     assert.equal(await page.locator("#rev-table .tag.completed").count(), 0);
     assert.deepEqual(errors, []);
   } finally {
@@ -663,8 +663,8 @@ test("the recent list's remaining count counts a joint-market completion once", 
   const { page, errors, close } = await open({ route });
   try {
     await page.locator("#recent li").first().waitFor();
-    // Ten more zone rows (two auctions of five zones) leave one completion and one revision.
-    assert.match(await page.locator("#recent").innerText(), /\+2 more in the revision log/);
+    // Ten more zone rows (two auctions of five zones) leave one more completion.
+    assert.match(await page.locator("#recent").innerText(), /\+1 more in the revision log/);
     assert.deepEqual(errors, []);
   } finally {
     await close();
@@ -754,7 +754,7 @@ test("data without the completion fields renders exactly as before", async () =>
     assert.equal(await page.locator("#recent .tag.completed").count(), 0);
     assert.equal(await page.locator("#rev-table .rev-done").count(), 0);
     assert.equal(await page.locator("#rev-table .tag.completed").count(), 0);
-    assert.equal(await page.locator("#rev-table tbody tr").count(), 6);
+    assert.equal(await page.locator("#rev-table tbody tr").count(), 3);
     const heads = (await page.locator("#reserve-table thead .th-btn").allInnerTexts()).map((h) => h.toLowerCase());
     assert.ok(heads.includes("price changes") && !heads.includes("revised") && !heads.includes("completed later"), heads.join(" | "));
     assert.equal(await page.locator("#restab-note").innerText(),
