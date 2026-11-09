@@ -68,6 +68,47 @@ def test_bad_currency_recalculation_count_fails(tmp_path):
     assert "currency_recalculations" in res.stderr
 
 
+def test_bad_completion_count_fails(tmp_path):
+    def breakit(s):
+        s["groups"][0]["last7"]["completions"] = -1
+    res = run_check(make_dir(tmp_path, summary=breakit))
+    assert res.returncode != 0
+    assert "completions" in res.stderr
+
+
+def test_bad_daily_completion_count_fails(tmp_path):
+    def breakit(s):
+        s["groups"][0]["daily"][0]["completions"] = 2.5
+    res = run_check(make_dir(tmp_path, summary=breakit))
+    assert res.returncode != 0
+    assert "completions" in res.stderr
+
+
+def test_bad_completions_7d_fails(tmp_path):
+    def breakit(s):
+        s["completions_7d"] = {"zone_intervals": 315, "market_intervals": "63"}
+    res = run_check(make_dir(tmp_path, summary=breakit))
+    assert res.returncode != 0
+    assert "completions_7d.market_intervals" in res.stderr
+
+
+def test_completions_7d_must_be_an_object(tmp_path):
+    def breakit(s):
+        s["completions_7d"] = 63
+    res = run_check(make_dir(tmp_path, summary=breakit))
+    assert res.returncode != 0
+    assert "completions_7d must be an object" in res.stderr
+
+
+def test_the_new_completion_fields_pass(tmp_path):
+    def change(s):
+        s["groups"][0]["last7"]["completions"] = 12
+        s["groups"][0]["daily"][0]["completions"] = 4
+        s["completions_7d"] = {"zone_intervals": 315, "market_intervals": 63}
+    res = run_check(make_dir(tmp_path, summary=change))
+    assert res.returncode == 0, res.stderr
+
+
 def test_bad_max_start_fails(tmp_path):
     def breakit(s):
         s["groups"][0]["last7"]["max_start"] = "2026-10-22 13:00"
@@ -123,6 +164,30 @@ def test_missing_required_key_fails(tmp_path):
     res = run_check(make_dir(tmp_path, revisions=breakit))
     assert res.returncode != 0
     assert "revised_at" in res.stderr
+
+
+def test_completed_kind_passes(tmp_path):
+    def change(r):
+        r["revisions"][1]["kind"] = "completed"
+    res = run_check(make_dir(tmp_path, revisions=change))
+    assert res.returncode == 0, res.stderr
+
+
+def test_completed_kind_needs_a_numeric_new(tmp_path):
+    def breakit(r):
+        r["revisions"][1]["kind"] = "completed"
+        r["revisions"][1]["new"] = None
+    res = run_check(make_dir(tmp_path, revisions=breakit))
+    assert res.returncode != 0
+    assert "completed entries must have a numeric new" in res.stderr
+
+
+def test_an_unknown_kind_fails(tmp_path):
+    def breakit(r):
+        r["revisions"][0]["kind"] = "corrected"
+    res = run_check(make_dir(tmp_path, revisions=breakit))
+    assert res.returncode != 0
+    assert "kind" in res.stderr
 
 
 def test_missing_file_fails(tmp_path):

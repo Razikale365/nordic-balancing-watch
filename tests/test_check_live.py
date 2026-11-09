@@ -53,7 +53,8 @@ def test_newest_price_later_than_the_95th_percentile_plus_two_hours_is_reported(
 
 def test_series_without_a_95th_percentile_or_group_are_not_judged():
     s = summary()
-    s["groups"][1]["last7"]["p95"] = None  # esett DK1
+    dk1 = next(g for g in s["groups"] if g["source"] == "esett" and g["zone"] == "DK1")
+    dk1["last7"]["p95"] = None
     s["now"] = [
         {"source": "esett", "zone": "DK1", "interval_start": "2026-10-24T14:00:00Z", "price": 50.0, "unit": "EUR/MWh",
          "published_at": None, "minutes_since_end": 9999.0},

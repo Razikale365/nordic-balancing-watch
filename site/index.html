@@ -262,8 +262,10 @@
             <div class="card-head">
               <h3 id="restab-h">By product and zone</h3>
             </div>
-            <p class="note">&ldquo;Price changes&rdquo; counts every change recorded in the
-              <span data-window>last 7 days</span>, including changes to delivery hours from before it.</p>
+            <p class="note">&ldquo;Revised&rdquo; counts every change recorded in the
+              <span data-window>last 7 days</span>, including changes to delivery hours from before it;
+              &ldquo;Completed later&rdquo; counts the prices a later auction completed, which are not
+              revisions.</p>
             <div id="reserve-table"></div>
           </article>
         </section>
@@ -274,7 +276,9 @@
             <h2 id="rev-h">Price changes after a price was first seen</h2>
             <p>The most recent changes from the <span data-window>last 7 days</span>, newest first: the price just before each
               change and the price it changed to. An interval revised twice appears twice. A <span class="term" data-term="withdrawn">withdrawal</span>
-              is a price that disappeared. Gaps filled in before a price was published are not listed.</p>
+              is a price that disappeared. Gaps filled in before a price was published are not listed.
+              A provisional price completed by a later <span class="term" data-term="auction">auction</span> is marked separately
+              and is not a revision; the same completion across the zones of a joint market counts once.</p>
           </div>
           <article class="card" aria-label="Revision log" data-needs-data hidden>
             <div class="card-head"><h3 id="hist-h">Revisions per hour</h3></div>
@@ -332,6 +336,10 @@
             <p>Energi Data Service recalculates its Danish-krone price from the euro price once a
               day. A change in the krone price alone is counted separately as a currency
               recalculation, not as a revision.</p>
+            <p>Energinet first publishes an FCR price as a volume-weighted average of the auctions
+              cleared so far, and a later auction completes it about 18 hours afterwards. Those
+              completions are not revisions: they are counted apart, and one auction across the
+              joint market's zones counts once.</p>
             <p>eSett first publishes the Finnish price as 0.00 and replaces it with the settled
               price about an hour later. Once replaced, that 0.00 counts neither as publication nor
               as a revision. A 0.00 that Fingrid also shows is a real price and stays.</p>
@@ -359,9 +367,10 @@
                   <tr><td><code>last7.published</code>, <code>revised</code>, <code>revised_share</code></td><td>Prices first seen in the period, how many of those changed later, and the share</td></tr>
                   <tr><td><code>last7.revisions</code>, <code>withdrawn</code>, <code>lag_p50_h</code></td><td>Price changes seen in the period to any interval, including ones first seen before it (so <code>revisions</code> can exceed <code>revised</code>), of which withdrawals, and the median hours from first price to change</td></tr>
                   <tr><td><code>last7.currency_recalculations</code></td><td>Changes to the Danish-krone price alone, the euro price unchanged (not counted as revisions)</td></tr>
+                  <tr><td><code>last7.completions</code>, <code>completions_7d</code></td><td>Prices completed by a later auction, per zone-interval and per joint-market interval (not counted as revisions)</td></tr>
                   <tr><td><code>groups[].daily[]</code></td><td>The same figures per closed UTC day, up to 30 days</td></tr>
                   <tr><td><code>now[]</code></td><td>Latest priced interval per source and zone, with price and minutes since it ended</td></tr>
-                  <tr><td><code>revisions[]</code></td><td>One change: interval, field and unit, old and new value, first published and revised times (UTC)</td></tr>
+                  <tr><td><code>revisions[]</code></td><td>One change: interval, field and unit, old and new value, first published and revised times (UTC), and a kind of changed, withdrawn or completed</td></tr>
                 </tbody>
               </table>
             </div>

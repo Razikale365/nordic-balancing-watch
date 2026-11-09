@@ -15,7 +15,7 @@ TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 SOURCES = {"esett", "energidataservice", "entsoe", "fingrid", "svk"}
 FIELDS = {"imbalance_price_eur", "imbalance_price_dkk", "price_eur_per_mw"}
-KINDS = {"changed", "withdrawn"}
+KINDS = {"changed", "withdrawn", "completed"}
 # Optional per-zone detail files, one per price zone, the same names the data function allows.
 ZONE_FILE_RE = re.compile(r"^zone-(DK[12]|FI|NO[1-5]|SE[1-4])\.json$")
 ZONE_CONTEXT = ("direction", "mfrr_up", "mfrr_down")
@@ -75,6 +75,9 @@ def check_last7(l, where, errors):
     # Added 2026-10-28; older data files do not have it.
     if "currency_recalculations" in l and not is_nonneg_int(l["currency_recalculations"]):
         errors.append(f"{where}: last7.currency_recalculations must be a non-negative integer")
+    # Added 2026-11-09: later auctions completing the provisional total, not revisions.
+    if "completions" in l and not is_nonneg_int(l["completions"]):
+        errors.append(f"{where}: last7.completions must be a non-negative integer")
     # Optional: the start of the 15-minute interval behind `max`.
     if l.get("max_start") is not None and not is_ts(l["max_start"]):
         errors.append(f"{where}: last7.max_start must be an ISO timestamp ending in Z or null")
@@ -142,12 +145,28 @@ def check_summary(data, errors):
             for k in ("n", "published", "revised", "revisions"):
                 if not is_nonneg_int(d.get(k)):
                     errors.append(f"{w}: {k} must be a non-negative integer")
+            if "completions" in d and not is_nonneg_int(d["completions"]):
+                errors.append(f"{w}: completions must be a non-negative integer")
             for k in ("p50", "p95"):
                 if d.get(k) is not None and not is_num(d.get(k)):
                     errors.append(f"{w}: {k} must be a number or null")
     if keys != sorted(keys):
         errors.append(f"{name}: groups must be sorted by source, data, zone")
+    check_completions_7d(data.get("completions_7d"), errors)
     check_now(data.get("now"), errors)
+
+
+def check_completions_7d(c, errors):
+    """Optional counts of prices completed by a later auction in the window."""
+    if c is None:
+        return
+    name = "summary.json: completions_7d"
+    if not isinstance(c, dict):
+        errors.append(f"{name} must be an object")
+        return
+    for k in ("zone_intervals", "market_intervals"):
+        if not is_nonneg_int(c.get(k)):
+            errors.append(f"{name}.{k} must be a non-negative integer")
 
 
 def check_http(rows, errors):
@@ -258,8 +277,8 @@ def check_revisions(data, errors):
             errors.append(f"{where}: kind must be one of {sorted(KINDS)}")
         elif kind == "withdrawn" and r.get("new") is not None:
             errors.append(f"{where}: withdrawn entries must have new = null")
-        elif kind == "changed" and not is_num(r.get("new")):
-            errors.append(f"{where}: changed entries must have a numeric new")
+        elif kind in ("changed", "completed") and not is_num(r.get("new")):
+            errors.append(f"{where}: {kind} entries must have a numeric new")
 
 
 def check_zone(data, name, errors):

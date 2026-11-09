@@ -30,6 +30,38 @@
           left out of the figures.</p>
       </div>
 
+      <article class="card" aria-labelledby="c2-h">
+        <h3 id="c2-h">9 November 2026: auction completions counted as revisions</h3>
+        <p class="sub">Period affected: start of collection (24 October 2026) to 9 November
+          2026. Figures were corrected on 9 November 2026.</p>
+
+        <h4>What was wrong</h4>
+        <p>Energinet publishes its FCR prices (FCR-N and FCR-D up and down, in DK2 and
+          SE1&ndash;SE4, one joint market) as a &ldquo;Total&rdquo;: a volume-weighted average of the
+          auctions cleared so far. When the later D-1 auction clears, about 18 hours after
+          first publication, the Total changes. On the collected log every such change with
+          evidence &mdash; 3,456 of 3,456 &mdash; was an auction being added, not a correction, but
+          the page counted them as revisions. It also counted each once per zone, so one
+          auction in the five-zone market counted five times. In the week to 8 November,
+          9,060 of the 9,069 logged price changes were these completions, and the
+          &ldquo;Revisions per hour&rdquo; peak of 315 was 63 prices, each counted in five zones.
+          The same week had 9 real imbalance revisions.</p>
+
+        <h4>Figures affected</h4>
+        <p>The &ldquo;Price changes logged&rdquo; tile, the &ldquo;Revisions per hour&rdquo; chart,
+          the &ldquo;Changed in the last 3 hours&rdquo; list and the revision log&rsquo;s counts.</p>
+
+        <h4>How it was corrected</h4>
+        <p>These changes are now classified from the provider&rsquo;s own auction rows: a Total
+          that moves when a further auction clears is marked as completed by a later auction,
+          not as a revision. Completions are shown separately, and one auction across the
+          joint market&rsquo;s zones counts once. Where the stored provider rows cannot show which auctions changed, a change is still
+          counted as a revision.</p>
+
+        <h4>What did not change</h4>
+        <p>The collected log keeps every version; nothing was deleted or edited.</p>
+      </article>
+
       <article class="card" aria-labelledby="c1-h">
         <h3 id="c1-h">28 October 2026: revision counts, withdrawals and Danish placeholders</h3>
         <p class="sub">Period affected: start of collection (24 October 2026, 07:34 UTC) to
