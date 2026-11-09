@@ -17,6 +17,7 @@
   --s-esett: #2a78d6;
   --s-entsoe: #eb6834;
   --s-tso: #1baf7a;
+  --s-completed: #8064d8;
   --good: #006300;
   --bad: #b42323;
   --up: #0a7d32;
@@ -50,6 +51,7 @@
     --s-esett: #3987e5;
     --s-entsoe: #d95926;
     --s-tso: #199e70;
+    --s-completed: #9d8ce8;
     --good: #3cc23c;
     --bad: #ff7a7a;
     --up: #34c77b;
@@ -80,6 +82,7 @@
   --s-esett: #3987e5;
   --s-entsoe: #d95926;
   --s-tso: #199e70;
+  --s-completed: #9d8ce8;
   --good: #3cc23c;
   --bad: #ff7a7a;
   --up: #34c77b;
@@ -624,6 +627,7 @@ td .muted, .muted { color: var(--muted); }
   background: var(--surface-2); color: var(--ink-2); font-weight: 600;
 }
 .tag.withdrawn { background: var(--warn-bg); color: var(--warn-ink); }
+.tag.completed { background: var(--accent-wash); color: var(--s-completed); }
 .meter { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; }
 .meter .b { width: 32px; height: 6px; border-radius: 3px; background: var(--grid); overflow: hidden; }
 .meter .b i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }

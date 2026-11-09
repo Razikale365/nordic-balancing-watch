@@ -10,12 +10,13 @@
      eSett, ENTSO-E and the national TSOs (each TSO covers its own zones). */
   var CAT = { esett: "esett", entsoe: "entsoe", energidataservice: "tso", fingrid: "tso", svk: "tso" };
   var CAT_ORDER = ["esett", "entsoe", "tso"];
-  var CAT_LABEL = { esett: "eSett", entsoe: "ENTSO-E", tso: "National TSO" };
+  var CAT_LABEL = { esett: "eSett", entsoe: "ENTSO-E", tso: "National TSO", completed: "Completed by a later auction" };
   var CAT_SHAPE = { esett: "circle", entsoe: "square", tso: "diamond" };
   var SRC_LABEL = {
     esett: "eSett", entsoe: "ENTSO-E", energidataservice: "Energinet",
     fingrid: "Fingrid", svk: "Svenska kraftnät"
   };
+  var KIND_LABEL = { changed: "Changed", withdrawn: "Withdrawn", completed: "Completed by a later auction" };
   var COUNTRY = { DK: "Denmark", FI: "Finland", NO: "Norway", SE: "Sweden" };
   var ZONES = ["DK1", "DK2", "FI", "NO1", "NO2", "NO3", "NO4", "NO5", "SE1", "SE2", "SE3", "SE4"];
 
@@ -32,6 +33,21 @@
   if (["UTC", "Europe/Stockholm"].indexOf(state.tz) < 0) state.tz = "UTC";
   function inZones(z) { return !state.zones || state.zones.indexOf(z) >= 0; }
   function term(key, text) { return '<span class="term" data-term="' + key + '">' + text + "</span>"; }
+  /* An entry a later auction completed is not a correction: the first price was a
+     provisional total. It is shown, but never counted as a revision. Energinet's FCR
+     markets are joint across several zones, so one auction can appear once per zone;
+     wherever a count is shown it counts once. */
+  function isCompletion(r) { return r.kind === "completed"; }
+  function dedupeJoint(revs) {
+    var seen = {};
+    return revs.filter(function (r) {
+      if (!isCompletion(r)) return true;
+      var k = [r.source, r.data, r.interval_start, r.revised_at, r.old, r.new].join("|");
+      return seen[k] ? false : (seen[k] = true);
+    });
+  }
+  /* Every price change seen on a series in the window: revisions plus completions. */
+  function rePriced(g) { return (g.last7.revisions || 0) + (g.last7.completions || 0); }
 
   /* ---------- small helpers ---------- */
 
@@ -893,13 +909,17 @@
     var p = s.polls_24h || {}, total = (p.ok || 0) + (p.skipped || 0) + (p.error || 0);
     var health = total ? (p.ok / total >= 0.98 ? "up" : p.ok / total >= 0.9 ? "amber" : "down") : "";
     var win = state.cov.label.charAt(0).toUpperCase() + state.cov.label.slice(1);
+    /* When the collector separates them, completed auctions are named, not counted in the figure. */
+    var c7 = s.completions_7d || {};
+    var done = typeof c7.market_intervals === "number" && isFinite(c7.market_intervals) ? c7.market_intervals : null;
+    var auction = done == null ? "" : " · plus " + fmtInt(done) + " reserve price" + (done === 1 ? "" : "s") + " completed by a later auction";
     /* The check counts come from the same file, so a stalled collector cannot vouch for itself. */
     var stale = state.summary && isStale(state.summary);
     if (stale) {
-      tiles.push(["Price changes logged", fmtInt(revisions), win,
+      tiles.push(["Price changes logged", fmtInt(revisions), win + auction,
         '<span class="tile-health"><span class="dot down"></span>No new data since ' + esc(dateTime(s.generated_at) + " " + tzName(s.generated_at)) + "</span>"]);
     } else {
-      tiles.push(["Price changes logged", fmtInt(revisions), win + (total ? " · " + fmtPct(p.ok / total) + " of checks OK in the last 24 h" : ""),
+      tiles.push(["Price changes logged", fmtInt(revisions), win + (total ? " · " + fmtPct(p.ok / total) + " of checks OK in the last 24 h" : "") + auction,
         health ? '<span class="tile-health"><span class="dot ' + health + '"></span>Collector ' +
           (health === "up" ? "healthy" : health === "amber" ? "partly failing" : "failing") + "</span>" : ""]);
     }
@@ -957,14 +977,14 @@
       out.push(lead0 + ", the value replaced was <b>0.00</b> (" +
         fmtInt(zeros.length) + " of " + fmtInt(esRevs.length) + " changes in the log, " + esc(zz) + ").");
     }
-    var res = reserveGroups(s).filter(function (g) { return g.last7.revisions > 0 && !changedAfterDelivery(g); });
+    var res = reserveGroups(s).filter(function (g) { return rePriced(g) > 0 && !changedAfterDelivery(g); });
     if (res.length) {
       var bySrc = {};
       res.forEach(function (g) { (bySrc[g.source] = bySrc[g.source] || []).push(g); });
       var src = Object.keys(bySrc).sort(function (a, b) {
-        return sum(bySrc[b].map(function (g) { return g.last7.revisions; })) - sum(bySrc[a].map(function (g) { return g.last7.revisions; }));
+        return sum(bySrc[b].map(rePriced)) - sum(bySrc[a].map(rePriced));
       })[0];
-      var gs = bySrc[src], n = sum(gs.map(function (g) { return g.last7.revisions; }));
+      var gs = bySrc[src], n = sum(gs.map(rePriced));
       var products = uniq(gs.map(function (g) { return g.data.split(" ")[0]; }));
       var lag = median(gs.map(function (g) { return g.last7.lag_p50_h; }).filter(function (v) { return v != null; }));
       var leadMin = median(gs.map(function (g) { return g.last7.p50; }).filter(function (v) { return v != null && v < 0; }));
@@ -1054,10 +1074,11 @@
     var hm = function (iso) { return fmtTime(iso, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }); };
     $("recent").innerHTML = shown.length ? shown.map(function (r) {
       return '<li><span class="t">' + esc(hm(r.revised_at)) + "</span><span>" + srcCell(r.source) + " · " + esc(r.zone) +
-        ' <span class="muted">' + esc(r.data === "imbalance" ? "for " + hm(r.interval_start) : r.data) + "</span></span>" +
+        ' <span class="muted">' + esc(r.data === "imbalance" ? "for " + hm(r.interval_start) : r.data) + "</span>" +
+        (isCompletion(r) ? ' <span class="tag completed">' + esc(CAT_LABEL.completed) + "</span>" : "") + "</span>" +
         '<span class="v"><span class="muted">' + fmtPrice(r.old) + " →</span> " +
         (r.new == null ? '<span class="tag withdrawn">Withdrawn</span>' : "<b>" + fmtPrice(r.new) + "</b> " + chg(r.old, r.new, { plain: true })) + "</span></li>";
-    }).join("") + (recent.length > shown.length ? '<li class="more">+' + (recent.length - shown.length) + " more in the revision log</li>" : "")
+    }).join("") + (recent.length > shown.length ? '<li class="more">+' + dedupeJoint(recent.slice(shown.length)).length + " more in the revision log</li>" : "")
       : '<li class="more">No price changed in the last 3 hours' + (state.zones ? " in the selected zones" : "") + ".</li>";
   }
 
@@ -1133,7 +1154,7 @@
   function renderSize(revs) {
     var by = {};
     revs.forEach(function (r) {
-      if (r.data !== "imbalance") return;
+      if (r.data !== "imbalance" || isCompletion(r)) return;
       var k = r.source + "|" + r.zone;
       var b = by[k] = by[k] || { n: 0, zero: 0, withdrawn: 0, sizes: [] };
       b.n++;
@@ -1165,7 +1186,9 @@
 
   function renderHistogram(s, revs) {
     var el = $("hist-chart");
-    if (!revs.length) { el.innerHTML = '<p class="empty-chart">No revision has been recorded in the ' + esc(state.cov.label) + '.</p>'; return; }
+    var real = revs.filter(function (r) { return !isCompletion(r); });
+    var done = dedupeJoint(revs).filter(isCompletion);
+    if (!real.length && !done.length) { el.innerHTML = '<p class="empty-chart">No revision has been recorded in the ' + esc(state.cov.label) + '.</p>'; return; }
     var HOUR = 3600000;
     var first = Math.floor(Math.min.apply(null, revs.map(function (r) { return Date.parse(r.revised_at); })) / HOUR) * HOUR;
     var last = Math.floor(Date.parse(s.generated_at) / HOUR) * HOUR;
@@ -1180,23 +1203,29 @@
         hourLabel: fmtTime(iso, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
       });
     }
-    revs.forEach(function (r) {
+    real.forEach(function (r) {
       var b = buckets[index[Math.floor(Date.parse(r.revised_at) / HOUR) * HOUR]];
       if (b) b.counts[cat(r.source)] = (b.counts[cat(r.source)] || 0) + 1;
     });
-    var cats = CAT_ORDER.filter(function (c) { return revs.some(function (r) { return cat(r.source) === c; }); });
+    done.forEach(function (r) {
+      var b = buckets[index[Math.floor(Date.parse(r.revised_at) / HOUR) * HOUR]];
+      if (b) b.counts.completed = (b.counts.completed || 0) + 1;
+    });
+    var strips = CAT_ORDER.filter(function (c) { return real.some(function (r) { return cat(r.source) === c; }); });
+    if (done.length) strips.push("completed");
     $("hist-legend").innerHTML = "";
     /* One strip per source with its own scale: a single large reserve batch must not
-       flatten the hourly imbalance pattern. */
-    el.innerHTML = cats.map(function (c, i) {
+       flatten the hourly imbalance pattern. Completions get their own strip, counted
+       once per joint market, and are not revisions. */
+    el.innerHTML = strips.map(function (c, i) {
       var top = Math.max.apply(null, buckets.map(function (b) { return b.counts[c] || 0; }));
       return '<div class="strip"><div class="strip-label"><span class="src">' + swatch(c) + esc(CAT_LABEL[c]) +
         '</span><span class="muted">most in an hour: ' + fmtInt(top) + '</span></div><div class="strip-plot" data-strip="' + i + '"></div></div>';
     }).join("");
     /* Fewer sources get taller strips, so a single source is not squeezed into a thin band. */
-    var height = cats.length === 1 ? 140 : cats.length === 2 ? 100 : 76;
-    cats.forEach(function (c, i) {
-      stackedColumns(el.querySelector('[data-strip="' + i + '"]'), buckets, [c], { height: height, axis: i === cats.length - 1, hourTicks: true });
+    var height = strips.length === 1 ? 140 : strips.length === 2 ? 100 : 76;
+    strips.forEach(function (c, i) {
+      stackedColumns(el.querySelector('[data-strip="' + i + '"]'), buckets, [c], { height: height, axis: i === strips.length - 1, hourTicks: true });
     });
   }
 
@@ -1271,12 +1300,12 @@
       step: function (m) { return m > 30 ? 12 : m > 12 ? 6 : 3; },
       empty: "No first publication of a capacity price has been measured yet."
     });
-    var revised = res.filter(function (g) { return g.last7.revisions > 0; });
+    var revised = res.filter(function (g) { return rePriced(g) > 0; });
     var bySrc = {};
     revised.forEach(function (g) { (bySrc[g.source + "|" + g.data.split(" ")[0]] = bySrc[g.source + "|" + g.data.split(" ")[0]] || []).push(g); });
     $("lead-callout").innerHTML = Object.keys(bySrc).map(function (k) {
       var gs = bySrc[k], lag = median(gs.map(function (g) { return g.last7.lag_p50_h; }).filter(function (v) { return v != null; }));
-      var n = fmtInt(sum(gs.map(function (g) { return g.last7.revisions; })));
+      var n = fmtInt(sum(gs.map(rePriced)));
       var head = esc(SRC_LABEL[gs[0].source]) + " " + esc(k.split("|")[1]) + " (" + esc(zoneRange(gs.map(function (g) { return g.zone; }))) + "): ";
       var after = lag != null ? ", typically " + fmtHours(lag) + " after first publication" : "";
       if (gs.every(changedAfterDelivery)) {
@@ -1287,14 +1316,14 @@
     }).join("<br>");
     var pending = {};
     res.forEach(function (g) {
-      if (!(g.last7.n > 0) && !(g.last7.revisions > 0)) pending[SRC_LABEL[g.source] + " " + g.data.split(" ")[0]] = true;
+      if (!(g.last7.n > 0) && !(rePriced(g) > 0)) pending[SRC_LABEL[g.source] + " " + g.data.split(" ")[0]] = true;
     });
     var names = Object.keys(pending).sort();
     $("lead-pending").textContent = names.length ? "Not measured yet in the " + state.cov.label + ": " + names.join(", ") + "." : "";
   }
 
   function renderReserveTable(s) {
-    var rows = reserveGroups(s).filter(function (g) { return g.last7.n > 0 || g.last7.revisions > 0; });
+    var rows = reserveGroups(s).filter(function (g) { return g.last7.n > 0 || rePriced(g) > 0; });
     var ahead = function (m) { return m == null ? null : -m / 60; };
     if (state.tables.reserves) { state.tables.reserves.setRows(rows); return; }
     state.tables.reserves = new DataTable($("reserve-table"), {
@@ -1308,7 +1337,7 @@
         { key: "lead", label: "Median lead", csvLabel: "Median lead (h before delivery)", num: true, get: function (g) { return ahead(g.last7.p50); }, html: function (g) { return fmtHours(ahead(g.last7.p50)); } },
         { key: "lead95", label: "95% at least", csvLabel: "95% at least (h before delivery)", num: true, get: function (g) { return ahead(g.last7.p95); }, html: function (g) { return fmtHours(ahead(g.last7.p95)); } },
         { key: "n", label: "Hours", num: true, get: function (g) { return g.last7.n; }, html: function (g) { return fmtInt(g.last7.n); } },
-        { key: "revisions", label: "Price changes", num: true, get: function (g) { return g.last7.revisions; }, html: function (g) { return fmtInt(g.last7.revisions); } },
+        { key: "revisions", label: "Price changes", num: true, get: rePriced, html: function (g) { return fmtInt(rePriced(g)); } },
         { key: "lag", label: "Typically after", csvLabel: "Typically after (h)", num: true, get: function (g) { return g.last7.lag_p50_h; }, html: function (g) { return fmtHours(g.last7.lag_p50_h); } }
       ]
     });
@@ -1342,8 +1371,8 @@
             return r.new == null ? "—" : chg(r.old, r.new, { plain: true });
           } },
         { key: "after", label: "After", csvLabel: "After first publication (h)", num: true, get: after, html: function (r) { return fmtHours(after(r)); } },
-        { key: "kind", label: "Type", get: function (r) { return r.kind === "withdrawn" ? "Withdrawn" : "Changed"; },
-          html: function (r) { return '<span class="tag ' + esc(r.kind) + '">' + (r.kind === "withdrawn" ? "Withdrawn" : "Changed") + "</span>"; }, hidden: true },
+        { key: "kind", label: "Type", get: function (r) { return KIND_LABEL[r.kind] || "Changed"; },
+          html: function (r) { return '<span class="tag ' + esc(r.kind) + '">' + esc(KIND_LABEL[r.kind] || "Changed") + "</span>"; }, hidden: true },
         { key: "first", label: "First published", time: true, hidden: true, get: function (r) { return r.first_published_at; },
           html: function (r) { return esc(dateTime(r.first_published_at)); } }
       ]
