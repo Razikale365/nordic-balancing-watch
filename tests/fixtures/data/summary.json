@@ -3,6 +3,7 @@
   "generated_at": "2026-10-24T19:00:00Z",
   "collecting_since": "2026-10-21T06:00:00Z",
   "observations_total": 15234,
+  "completions_7d": {"zone_intervals": 356, "market_intervals": 72},
   "polls_24h": {"ok": 1410, "skipped": 30, "error": 2},
   "http_24h": [
     {"source": "esett", "polls": 96, "requests": 192, "non_200": 1, "retry_sleep_s": 4.5},
@@ -65,12 +66,12 @@
         "n": 96, "excluded": 0,
         "p50": -2520.0, "p95": -1800.0, "max": -60.0,
         "published": 96, "revised": 88, "revised_share": 0.9167,
-        "revisions": 94, "withdrawn": 2, "lag_p50_h": 8.7, "lag_max_h": 11.2
+        "revisions": 4, "completions": 90, "withdrawn": 2, "lag_p50_h": 8.7, "lag_max_h": 11.2
       },
       "daily": [
-        {"day": "2026-10-21", "n": 24, "p50": -2540.0, "p95": -1820.0, "published": 24, "revised": 22, "revisions": 23},
-        {"day": "2026-10-22", "n": 24, "p50": -2510.0, "p95": -1790.0, "published": 24, "revised": 22, "revisions": 24},
-        {"day": "2026-10-23", "n": 24, "p50": -2500.0, "p95": -1810.0, "published": 24, "revised": 22, "revisions": 23}
+        {"day": "2026-10-21", "n": 24, "p50": -2540.0, "p95": -1820.0, "published": 24, "revised": 22, "revisions": 1, "completions": 22},
+        {"day": "2026-10-22", "n": 24, "p50": -2510.0, "p95": -1790.0, "published": 24, "revised": 22, "revisions": 2, "completions": 22},
+        {"day": "2026-10-23", "n": 24, "p50": -2500.0, "p95": -1810.0, "published": 24, "revised": 22, "revisions": 1, "completions": 22}
       ]
     },
     {
@@ -81,12 +82,12 @@
         "n": 120, "excluded": 0,
         "p50": -2880.0, "p95": -1500.0, "max": -120.0,
         "published": 118, "revised": 110, "revised_share": 0.9322,
-        "revisions": 118, "withdrawn": 0, "lag_p50_h": 9.1, "lag_max_h": 14.0
+        "revisions": 8, "completions": 110, "withdrawn": 0, "lag_p50_h": 9.1, "lag_max_h": 14.0
       },
       "daily": [
-        {"day": "2026-10-21", "n": 24, "p50": -2890.0, "p95": -1520.0, "published": 24, "revised": 22, "revisions": 24},
-        {"day": "2026-10-22", "n": 24, "p50": -2870.0, "p95": -1490.0, "published": 23, "revised": 22, "revisions": 23},
-        {"day": "2026-10-23", "n": 24, "p50": -2885.0, "p95": -1505.0, "published": 24, "revised": 22, "revisions": 24}
+        {"day": "2026-10-21", "n": 24, "p50": -2890.0, "p95": -1520.0, "published": 24, "revised": 22, "revisions": 2, "completions": 22},
+        {"day": "2026-10-22", "n": 24, "p50": -2870.0, "p95": -1490.0, "published": 23, "revised": 22, "revisions": 3, "completions": 20},
+        {"day": "2026-10-23", "n": 24, "p50": -2885.0, "p95": -1505.0, "published": 24, "revised": 22, "revisions": 3, "completions": 21}
       ]
     },
     {
@@ -97,12 +98,12 @@
         "n": 168, "excluded": 1,
         "p50": -2760.0, "p95": -1380.0, "max": -90.0,
         "published": 165, "revised": 158, "revised_share": 0.9576,
-        "revisions": 162, "withdrawn": 1, "lag_p50_h": 9.0, "lag_max_h": 13.5
+        "revisions": 6, "completions": 156, "withdrawn": 1, "lag_p50_h": 9.0, "lag_max_h": 13.5
       },
       "daily": [
-        {"day": "2026-10-21", "n": 24, "p50": -2770.0, "p95": -1400.0, "published": 24, "revised": 23, "revisions": 23},
-        {"day": "2026-10-22", "n": 24, "p50": -2750.0, "p95": -1370.0, "published": 23, "revised": 23, "revisions": 24},
-        {"day": "2026-10-23", "n": 24, "p50": -2765.0, "p95": -1385.0, "published": 24, "revised": 23, "revisions": 23}
+        {"day": "2026-10-21", "n": 24, "p50": -2770.0, "p95": -1400.0, "published": 24, "revised": 23, "revisions": 2, "completions": 21},
+        {"day": "2026-10-22", "n": 24, "p50": -2750.0, "p95": -1370.0, "published": 23, "revised": 23, "revisions": 2, "completions": 22},
+        {"day": "2026-10-23", "n": 24, "p50": -2765.0, "p95": -1385.0, "published": 24, "revised": 23, "revisions": 2, "completions": 21}
       ]
     }
   ],

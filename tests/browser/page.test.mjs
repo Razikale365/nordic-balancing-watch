@@ -597,6 +597,113 @@ test("on a phone the menus open on screen and the price board and field list rea
   }
 });
 
+// Auction completions are not revisions: the tile counts only revisions and names them,
+// and every figure or chart keeps them visible but separate, counting a joint-market
+// completion once.
+test("the headline tile counts revisions only and names the completions", async () => {
+  const { page, errors, close } = await open();
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const tile = page.locator("#stats .stat").filter({ hasText: "Price changes logged" });
+    const revisions = SUMMARY.groups.reduce((n, g) => n + g.last7.revisions, 0).toLocaleString("en-GB");
+    assert.equal(await tile.locator(".v").innerText(), revisions);
+    assert.match(await tile.locator(".s").innerText(), /plus 72 reserve prices completed by a later auction/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("the chart, the recent list and the log keep completions apart from revisions, a joint market once", async () => {
+  const { page, errors, close } = await open();
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    // The five zone rows of one auction are one strip, counted once in the busiest hour;
+    // the TSO strip only counts its three real revisions.
+    const strips = await page.locator("#hist-chart .strip").count();
+    assert.equal(strips, 4);
+    const labels = await page.locator("#hist-chart .strip-label").allInnerTexts();
+    const tso = labels.find((t) => /National TSO/.test(t));
+    const done = labels.filter((t) => /Completed by a later auction/.test(t));
+    assert.equal(done.length, 1);
+    assert.match(done[0], /most in an hour: 1/);
+    assert.match(tso, /most in an hour: 1/);
+    // The recent list still shows each zone, tagged as a completion rather than a revision.
+    assert.equal(await page.locator("#recent .tag.completed").count(), 5);
+    assert.match(await page.locator("#recent").innerText(), /\+1 more in the revision log/);
+    // The log lists every zone row, each tagged once its Type column is shown.
+    await page.locator("#rev-table [data-role=cols]").click();
+    await page.locator('#rev-table [data-role="pop"] input[data-k="kind"]').check();
+    assert.equal(await page.locator("#rev-table .tag.completed").count(), 5);
+    const kinds = await page.locator('#rev-table [data-filter="kind"] option').allInnerTexts();
+    assert.ok(kinds.includes("Completed by a later auction"), kinds.join(" | "));
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("the recent list's remaining count counts a joint-market completion once", async () => {
+  const route = routeRevisions((r) => {
+    const extra = r.revisions.filter((x) => x.kind === "completed").map((x) =>
+      ({ ...x, interval_start: "2026-10-24T14:00:00Z", revised_at: "2026-10-24T16:30:00Z" }));
+    r.revisions = r.revisions.filter((x) => x.revised_at >= "2026-10-24T16:00:00Z").concat(extra)
+      .sort((a, b) => (a.revised_at < b.revised_at ? 1 : -1));
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#recent li").first().waitFor();
+    // Ten more zone rows (two auctions of five zones) leave one completion and one revision.
+    assert.match(await page.locator("#recent").innerText(), /\+2 more in the revision log/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("data without the completion fields renders exactly as before", async () => {
+  const route = {
+    match: "**/data/*.json",
+    handle: (r) => {
+      const name = r.request().url().split("/").pop();
+      const body = name === "revisions.json"
+        ? (() => { const rev = structuredClone(REVISIONS); rev.revisions = rev.revisions.filter((x) => x.kind !== "completed"); return rev; })()
+        : (() => {
+          const s = structuredClone(SUMMARY);
+          delete s.completions_7d;
+          s.groups.forEach((g) => { delete g.last7.completions; (g.daily || []).forEach((d) => delete d.completions); });
+          return s;
+        })();
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+    }
+  };
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    assert.doesNotMatch(await page.locator("#stats").innerText(), /completed by a later auction/i);
+    assert.equal(await page.locator("#hist-chart .strip").count(), 3);
+    assert.equal(await page.locator("#recent .tag.completed").count(), 0);
+    assert.equal(await page.locator("#rev-table .tag.completed").count(), 0);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("the corrections page lists the auction-completion correction", async () => {
+  const { page, errors, close } = await openPage(browser, `${origin}/corrections.html`);
+  try {
+    const text = await page.locator("main").innerText();
+    assert.match(text, /9 November 2026: auction completions counted as revisions/);
+    assert.match(text, /9,060 of the 9,069/);
+    assert.match(text, /peak of 315 was 63 prices/);
+    assert.match(text, /nothing was deleted or edited/i);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
 test("crawler files and unknown addresses are served as expected", async () => {
   const { page, close } = await open({ javaScriptEnabled: false });
   try {
