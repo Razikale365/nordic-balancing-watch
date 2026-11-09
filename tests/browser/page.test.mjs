@@ -710,6 +710,32 @@ test("completions that differ by zone are said as a per-zone range", async () =>
   }
 });
 
+// The reserve finding names the typical lag when it is known; when it is not, the sentence
+// runs straight into the auction clause without a comma left behind.
+test("the reserve finding names the update lag only when it is known", async () => {
+  const { page, errors, close } = await open();
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    assert.match(await page.locator("#findings").innerText(), /are then updated about 18 h later, when the next auction clears/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+  const route = routeSummary((s) => {
+    s.groups.filter((g) => g.data !== "imbalance").forEach((g) => { g.last7.lag_p50_h = null; });
+  });
+  const noLag = await open({ route });
+  try {
+    await noLag.page.locator("#stats .stat").first().waitFor();
+    const text = await noLag.page.locator("#findings").innerText() + await noLag.page.locator("#lead-callout").innerText();
+    assert.match(text, /are then updated when the next auction clears/);
+    assert.doesNotMatch(text, /updated,\s*when/);
+    assert.deepEqual(noLag.errors, []);
+  } finally {
+    await noLag.close();
+  }
+});
+
 test("the reserve table separates revisions from prices a later auction completed", async () => {
   const { page, errors, close } = await open();
   try {

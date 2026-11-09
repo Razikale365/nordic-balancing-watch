@@ -1030,8 +1030,8 @@
       out.push("Prices for " + term("reserve", "standby power") + " (" + esc(products.join(" and ")) + " in " +
         esc(zoneRange(gs.map(function (g) { return g.zone; }))) + ") come out" +
         (leadMin != null ? " about <b>" + fmtHours(-leadMin / 60) + " before delivery</b>" : " ahead of delivery") +
-        " and are then updated" + (lag != null ? " about <b>" + fmtHours(lag) + "</b> later" : "") +
-        ", when the next " + term("auction", "auction") + " clears (" + note + ").");
+        " and are then updated" + (lag != null ? " about <b>" + fmtHours(lag) + "</b> later," : "") +
+        " when the next " + term("auction", "auction") + " clears (" + note + ").");
     }
     $("findings").innerHTML = out.length ? out.map(function (h) { return "<li><span>" + h + "</span></li>"; }).join("")
       : "<li><span>Not enough data yet: findings appear after the first full day of collection.</span></li>";
