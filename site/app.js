@@ -921,6 +921,27 @@
         '<span class="tile-meter" aria-hidden="true"><i style="width:' + Math.max(rev ? 2 : 0, Math.round(rev / pub * 100)) + '%"></i></span>']);
     }
     var revisions = sum((s.groups || []).map(function (g) { return (g.last7 && g.last7.revisions) || 0; }));
+    /* The same correction can be logged once per source; when the log is known to hold every
+       imbalance revision of the window, the tile counts each corrected price once and says
+       how many records that rests on. Logs without kept counts keep the record count. */
+    var kp = state.kept, head = ["Price changes logged", revisions, ""];
+    if (kp && typeof kp.imbalance === "number" && kp.imbalance === kp.imbalance_total) {
+      var seen = {}, srcs = {}, logged = 0, corrected = 0;
+      state.revisions.filter(function (r) { return inZones(r.zone); }).forEach(function (r) {
+        if (isCompletion(r)) return;
+        logged++;
+        srcs[r.source] = true;
+        if (r.data === "imbalance") {
+          var key = [r.zone, r.interval_start, r.old, r.new].join("|");
+          if (seen[key]) return;
+          seen[key] = true;
+        }
+        corrected++;
+      });
+      var m = Object.keys(srcs).length;
+      head = ["Prices corrected", corrected,
+        logged !== corrected ? fmtInt(logged) + " changes logged across " + m + " source" + (m === 1 ? "" : "s") + " · " : ""];
+    }
     var p = s.polls_24h || {}, total = (p.ok || 0) + (p.skipped || 0) + (p.error || 0);
     var health = total ? (p.ok / total >= 0.98 ? "up" : p.ok / total >= 0.9 ? "amber" : "down") : "";
     var win = state.cov.label.charAt(0).toUpperCase() + state.cov.label.slice(1);
@@ -931,10 +952,10 @@
     /* The check counts come from the same file, so a stalled collector cannot vouch for itself. */
     var stale = state.summary && isStale(state.summary);
     if (stale) {
-      tiles.push(["Price changes logged", fmtInt(revisions), win + auction,
+      tiles.push([head[0], fmtInt(head[1]), head[2] + win + auction,
         '<span class="tile-health"><span class="dot down"></span>No new data since ' + esc(dateTime(s.generated_at) + " " + tzName(s.generated_at)) + "</span>"]);
     } else {
-      tiles.push(["Price changes logged", fmtInt(revisions), win + (total ? " · " + fmtPct(p.ok / total) + " of checks OK in the last 24 h" : "") + auction,
+      tiles.push([head[0], fmtInt(head[1]), head[2] + win + (total ? " · " + fmtPct(p.ok / total) + " of checks OK in the last 24 h" : "") + auction,
         health ? '<span class="tile-health"><span class="dot ' + health + '"></span>Collector ' +
           (health === "up" ? "healthy" : health === "amber" ? "partly failing" : "failing") + "</span>" : ""]);
     }
@@ -1009,8 +1030,8 @@
       out.push("Prices for " + term("reserve", "standby power") + " (" + esc(products.join(" and ")) + " in " +
         esc(zoneRange(gs.map(function (g) { return g.zone; }))) + ") come out" +
         (leadMin != null ? " about <b>" + fmtHours(-leadMin / 60) + " before delivery</b>" : " ahead of delivery") +
-        " and are then updated" + (lag != null ? " about <b>" + fmtHours(lag) + "</b> later" : "") +
-        ", when the next " + term("auction", "auction") + " clears (" + note + ").");
+        " and are then updated" + (lag != null ? " about <b>" + fmtHours(lag) + "</b> later," : "") +
+        " when the next " + term("auction", "auction") + " clears (" + note + ").");
     }
     $("findings").innerHTML = out.length ? out.map(function (h) { return "<li><span>" + h + "</span></li>"; }).join("")
       : "<li><span>Not enough data yet: findings appear after the first full day of collection.</span></li>";
@@ -1310,7 +1331,7 @@
         tip: '<div class="t-title">' + esc(SRC_LABEL[a.source]) + " · " + esc(a.data) + "</div>" +
           tipRow(cat(a.source), "Median lead", fmtHours(hours)) +
           tipRow(cat(a.source), "Zones", esc(zones)) +
-          tipRow(cat(a.source), "Delivery hours", fmtInt(sum(a.groups.map(function (g) { return g.last7.n; })) / a.groups.length))
+          tipRow(cat(a.source), "Delivery quarter-hours", fmtInt(sum(a.groups.map(function (g) { return g.last7.n; })) / a.groups.length))
       };
     }).sort(function (a, b) { return b.value - a.value; });
     hbars($("lead-chart"), rows, {
@@ -1352,9 +1373,9 @@
     /* Data files from before the completions field keep the old column and its note. */
     $("restab-note").innerHTML = done
       ? "&ldquo;Revised&rdquo; counts every change recorded in the <span data-window>" + esc(state.cov.label) + "</span>, " +
-        "including changes to delivery hours from before it; &ldquo;Completed later&rdquo; counts the prices a later auction completed, which are not revisions."
+        "including changes to delivery quarter-hours from before it; &ldquo;Completed later&rdquo; counts the prices a later auction completed, which are not revisions."
       : "&ldquo;Price changes&rdquo; counts every change recorded in the <span data-window>" + esc(state.cov.label) + "</span>, " +
-        "including changes to delivery hours from before it.";
+        "including changes to delivery quarter-hours from before it.";
     if (state.tables.reserves) { state.tables.reserves.setRows(rows); return; }
     state.tables.reserves = new DataTable($("reserve-table"), {
       id: "reserves", rows: rows, page: 100, csvName: "nordic-reserve-publication.csv",
@@ -1366,7 +1387,7 @@
         { key: "zone", label: "Zone", get: function (g) { return g.zone; }, filterSort: function (a, b) { return zoneIndex(a) - zoneIndex(b); } },
         { key: "lead", label: "Median lead", csvLabel: "Median lead (h before delivery)", num: true, get: function (g) { return ahead(g.last7.p50); }, html: function (g) { return fmtHours(ahead(g.last7.p50)); } },
         { key: "lead95", label: "95% at least", csvLabel: "95% at least (h before delivery)", num: true, get: function (g) { return ahead(g.last7.p95); }, html: function (g) { return fmtHours(ahead(g.last7.p95)); } },
-        { key: "n", label: "Hours", num: true, get: function (g) { return g.last7.n; }, html: function (g) { return fmtInt(g.last7.n); } },
+        { key: "n", label: "Quarter-hours", num: true, get: function (g) { return g.last7.n; }, html: function (g) { return fmtInt(g.last7.n); } },
         { key: "revisions", label: done ? "Revised" : "Price changes", num: true, get: function (g) { return g.last7.revisions; }, html: function (g) { return fmtInt(g.last7.revisions); } },
         done ? { key: "completions", label: "Completed later", num: true, get: function (g) { return g.last7.completions; },
           html: function (g) { return g.last7.completions == null ? "—" : fmtInt(g.last7.completions); } } : null,
