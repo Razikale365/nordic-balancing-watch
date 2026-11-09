@@ -1331,7 +1331,7 @@
         tip: '<div class="t-title">' + esc(SRC_LABEL[a.source]) + " · " + esc(a.data) + "</div>" +
           tipRow(cat(a.source), "Median lead", fmtHours(hours)) +
           tipRow(cat(a.source), "Zones", esc(zones)) +
-          tipRow(cat(a.source), "Delivery hours", fmtInt(sum(a.groups.map(function (g) { return g.last7.n; })) / a.groups.length))
+          tipRow(cat(a.source), "Delivery quarter-hours", fmtInt(sum(a.groups.map(function (g) { return g.last7.n; })) / a.groups.length))
       };
     }).sort(function (a, b) { return b.value - a.value; });
     hbars($("lead-chart"), rows, {
@@ -1373,9 +1373,9 @@
     /* Data files from before the completions field keep the old column and its note. */
     $("restab-note").innerHTML = done
       ? "&ldquo;Revised&rdquo; counts every change recorded in the <span data-window>" + esc(state.cov.label) + "</span>, " +
-        "including changes to delivery hours from before it; &ldquo;Completed later&rdquo; counts the prices a later auction completed, which are not revisions."
+        "including changes to delivery quarter-hours from before it; &ldquo;Completed later&rdquo; counts the prices a later auction completed, which are not revisions."
       : "&ldquo;Price changes&rdquo; counts every change recorded in the <span data-window>" + esc(state.cov.label) + "</span>, " +
-        "including changes to delivery hours from before it.";
+        "including changes to delivery quarter-hours from before it.";
     if (state.tables.reserves) { state.tables.reserves.setRows(rows); return; }
     state.tables.reserves = new DataTable($("reserve-table"), {
       id: "reserves", rows: rows, page: 100, csvName: "nordic-reserve-publication.csv",
@@ -1387,7 +1387,7 @@
         { key: "zone", label: "Zone", get: function (g) { return g.zone; }, filterSort: function (a, b) { return zoneIndex(a) - zoneIndex(b); } },
         { key: "lead", label: "Median lead", csvLabel: "Median lead (h before delivery)", num: true, get: function (g) { return ahead(g.last7.p50); }, html: function (g) { return fmtHours(ahead(g.last7.p50)); } },
         { key: "lead95", label: "95% at least", csvLabel: "95% at least (h before delivery)", num: true, get: function (g) { return ahead(g.last7.p95); }, html: function (g) { return fmtHours(ahead(g.last7.p95)); } },
-        { key: "n", label: "Hours", num: true, get: function (g) { return g.last7.n; }, html: function (g) { return fmtInt(g.last7.n); } },
+        { key: "n", label: "Quarter-hours", num: true, get: function (g) { return g.last7.n; }, html: function (g) { return fmtInt(g.last7.n); } },
         { key: "revisions", label: done ? "Revised" : "Price changes", num: true, get: function (g) { return g.last7.revisions; }, html: function (g) { return fmtInt(g.last7.revisions); } },
         done ? { key: "completions", label: "Completed later", num: true, get: function (g) { return g.last7.completions; },
           html: function (g) { return g.last7.completions == null ? "—" : fmtInt(g.last7.completions); } } : null,

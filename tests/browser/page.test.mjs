@@ -716,7 +716,8 @@ test("the reserve table separates revisions from prices a later auction complete
     await page.locator("#stats .stat").first().waitFor();
     const heads = (await page.locator("#reserve-table thead .th-btn").allInnerTexts()).map((h) => h.toLowerCase());
     assert.ok(heads.includes("revised") && heads.includes("completed later"), heads.join(" | "));
-    assert.ok(!heads.includes("price changes"), heads.join(" | "));
+    assert.ok(heads.includes("quarter-hours"), heads.join(" | "));
+    assert.ok(!heads.includes("price changes") && !heads.includes("hours"), heads.join(" | "));
     assert.match(await page.locator("#restab-note").innerText(), /“Revised” counts every change.+“Completed later”/);
     const enRow = page.locator("#reserve-table tbody tr").filter({ hasText: "Energinet" }).filter({ hasText: "FCR-N" }).first();
     assert.equal(await enRow.locator("td").nth(6).innerText(), "2");
@@ -758,7 +759,7 @@ test("data without the completion fields renders exactly as before", async () =>
     const heads = (await page.locator("#reserve-table thead .th-btn").allInnerTexts()).map((h) => h.toLowerCase());
     assert.ok(heads.includes("price changes") && !heads.includes("revised") && !heads.includes("completed later"), heads.join(" | "));
     assert.equal(await page.locator("#restab-note").innerText(),
-      "“Price changes” counts every change recorded in the first 3.5 days of collection, including changes to delivery hours from before it.");
+      "“Price changes” counts every change recorded in the first 3.5 days of collection, including changes to delivery quarter-hours from before it.");
     assert.match(await page.locator("#findings").innerText(), /14 zone-quarter-hours re-priced/);
     assert.doesNotMatch(await page.locator("#lead-callout").innerText(), /completed|in each zone/i);
     assert.deepEqual(errors, []);
