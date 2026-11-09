@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="author" content="João Paulo Navarro">
   <title>When Nordic balancing prices appear and change · Nordic Balancing Watch</title>
   <meta name="description" content="An independent record of when Nordic imbalance and reserve prices are first published, and every change made to them afterwards.">
   <!-- The public address appears here, in og:url, the JSON-LD below, config.js, robots.txt and
@@ -31,8 +32,10 @@
     "@context": "https://schema.org",
     "@type": "Dataset",
     "name": "Nordic Balancing Watch: publication times and revisions of Nordic balancing prices",
-    "description": "When Nordic imbalance prices and reserve capacity prices are first seen on eSett, ENTSO-E and the national grid operators' open-data sites, and every later change to them. Imbalance prices are checked every 15 minutes and reserve capacity prices every hour. The public files hold rolling 7-day statistics per price zone and source, and the newest 500 recorded price changes.",
+    "description": "When Nordic imbalance prices and reserve capacity prices are first seen on eSett, ENTSO-E and the national grid operators' open-data sites, and every later change to them. Imbalance prices are checked every 15 minutes and reserve capacity prices every hour. The public files hold rolling 7-day statistics per price zone and source, and up to 500 recorded price changes, every imbalance price change of the window first.",
     "url": "https://nordic-balancing-watch.pages.dev/",
+    "creator": { "@type": "Person", "name": "João Paulo Navarro", "url": "https://razikale365.github.io/",
+      "sameAs": ["https://github.com/Razikale365", "https://www.linkedin.com/in/jp-dev-full-stack/"] },
     "isAccessibleForFree": true,
     "keywords": ["imbalance price", "reserve capacity", "price revisions", "eSett", "ENTSO-E", "Nordic electricity market"],
     "spatialCoverage": { "@type": "Place", "name": "Denmark, Finland, Norway and Sweden" },
@@ -488,6 +491,9 @@
       </div>
       <div>
         <h2>About</h2>
+        <p>Built and maintained by Jo&atilde;o Paulo Navarro
+          (<a href="https://razikale365.github.io/" rel="noopener">website</a> &middot;
+          <a href="https://www.linkedin.com/in/jp-dev-full-stack/" rel="noopener">LinkedIn</a>).</p>
         <p>Not affiliated with any of these organisations. Price data belongs to its providers.</p>
         <p>Built on the open-source <a href="https://pypi.org/project/nordic-balancing/" rel="noopener">nordic-balancing</a>
           library (<a href="https://github.com/Razikale365/nordic-balancing" rel="noopener">GitHub</a>)<span id="collector-link"></span>.</p>

@@ -46,8 +46,9 @@ for the zone panel) — the format is the schema-1 contract validated by
 `scripts/check_data.py` — and pushes them every 15 minutes to the `data` branch of this
 repository. The site reads them through a small Pages Function (`functions/data/[name].js`)
 that fetches only these files from that branch, rejects anything that is not schema-1 JSON,
-and caches them at the edge for five minutes. New data therefore needs no redeploy; the deploy
-workflow runs only when the site's code changes.
+and caches them at the edge for five minutes. New data therefore needs no redeploy; the site
+is deployed only when its code changes, by the `deploy` job of the CI workflow, which starts
+after the tests have passed on `main` (or when run by hand).
 
 ## Data sources and licences
 
@@ -85,11 +86,17 @@ python -m http.server -d site
 ## Tests
 
 ```
-python -m pytest -q                        # check_data.py contract tests
+python -m pytest -q                        # check_data.py and check_live.py tests
 node --test tests/*.test.mjs               # functions, page metadata and security header tests
 node --test tests/browser/*.test.mjs       # the page in Chromium (needs Playwright)
 python scripts/check_data.py tests/fixtures/data
 ```
+
+`scripts/check_live.py` does the same checks on the live site's data and also fails when the
+data is more than 45 minutes old, when more than a tenth of the collector's checks in the last
+24 hours failed, or when the newest price of a source and zone is more than two hours later
+than that series' 95th percentile. The `Data freshness` workflow runs it twice an hour, so a
+stalled collector shows up as a failed run.
 
 The browser tests check that the heading, explanations, method and glossary stay readable
 with JavaScript off, when `app.js` fails to load and when the data files cannot be fetched,
@@ -138,11 +145,11 @@ final domain.
 1. Create a Cloudflare Pages project named `nordic-balancing-watch` connected to this repo
    (or let the first `wrangler pages deploy` create it).
 2. Create the D1 database `nbw-waitlist` (`wrangler d1 create nbw-waitlist`) and paste the
-   printed id into `database_id` in `wrangler.toml`. The deploy workflow applies
+   printed id into `database_id` in `wrangler.toml`. The deploy job applies
    `migrations/` remotely on every run.
    Do this before step 3: the migrations step fails while the placeholder id is in place.
 3. Add two repository secrets: `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
-   Without them the workflow still runs the tests but skips the deploy step.
+   Without them the workflow still runs the tests but skips the deploy steps.
 4. Give the collector a deploy key with write access so it can push its data files to the
    `data` branch every 15 minutes.
 5. Add a Cloudflare rate-limiting rule for `/api/waitlist` (for example 5 requests per minute

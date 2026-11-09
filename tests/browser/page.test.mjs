@@ -164,6 +164,301 @@ for (const [label, published, revised, value, sub] of [
   });
 }
 
+// Serves the fixture summary after `change` has edited a copy of it.
+function routeSummary(change) {
+  const s = structuredClone(SUMMARY);
+  change(s);
+  return { match: "**/data/summary.json", handle: (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(s) }) };
+}
+const group = (s, source, zone) => s.groups.find((g) => g.data === "imbalance" && g.source === source && g.zone === zone);
+// The three imbalance series of the fixture, each with its slowest price on the same interval.
+function shareSlowest(s) {
+  for (const [source, zone, max] of [["esett", "DK1", 615], ["esett", "DK2", 430], ["entsoe", "FI", 400]]) {
+    Object.assign(group(s, source, zone).last7, { max, max_start: "2026-10-23T02:15:00Z" });
+  }
+}
+
+test("when the slowest price of several sources is the same interval, the findings and the outlier note say so", async () => {
+  const { page, errors, close } = await open({ route: routeSummary(shareSlowest) });
+  try {
+    await page.locator("#findings li").first().waitFor();
+    const found = (await page.locator("#findings li").allInnerTexts()).filter((t) => /^One 15-minute price/.test(t));
+    assert.equal(found.length, 1);
+    assert.equal(found[0], "One 15-minute price, the one starting 23 Oct, 02:15 UTC, first appeared 7–10 h after it ended at every source: " +
+      "eSett (DK1, DK2) and ENTSO-E (FI), so the delay began before publication rather than at one publisher.");
+    assert.equal(await page.locator("#delay-callout").innerText(), "Outlier: one 15-minute price, the one starting 23 Oct, 02:15 UTC, " +
+      "took 7–10 h to appear at eSett (DK1, DK2) and ENTSO-E (FI) alike, against 95th percentiles of 88–96 min.");
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("a shared slowest interval does not say every source when a source category does not share it", async () => {
+  const route = routeSummary((s) => {
+    shareSlowest(s);
+    const fin = structuredClone(group(s, "entsoe", "FI"));
+    s.groups.push(Object.assign(fin, { source: "fingrid" }));
+    fin.last7.max_start = "2026-10-22T10:00:00Z";
+    s.groups.sort((a, b) => (a.source + a.data + a.zone < b.source + b.data + b.zone ? -1 : 1));
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#findings li").first().waitFor();
+    const found = (await page.locator("#findings li").allInnerTexts()).filter((t) => /^One 15-minute price/.test(t));
+    assert.equal(found.length, 1);
+    assert.match(found[0], /after it ended at the sources that share it: eSett \(DK1, DK2\) and ENTSO-E \(FI\), so the delay began before publication/);
+    assert.doesNotMatch(found[0], /every source/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+for (const [label, change] of [
+  ["max_start is absent", (s) => { shareSlowest(s); s.groups.forEach((g) => delete g.last7.max_start); }],
+  ["the sources do not share the interval", (s) => { shareSlowest(s); group(s, "entsoe", "FI").last7.max_start = "2026-10-22T10:00:00Z"; }],
+  ["only one source category shares it", (s) => { shareSlowest(s); group(s, "entsoe", "FI").last7.max_start = null; }],
+  ["the shared delay is under six hours", (s) => { shareSlowest(s); s.groups.forEach((g) => { if (g.last7.max_start) g.last7.max = 300; }); }]
+]) {
+  test(`the page reads as before when ${label}`, async () => {
+    const { page, errors, close } = await open({ route: routeSummary(change) });
+    try {
+      await page.locator("#findings li").first().waitFor();
+      assert.doesNotMatch(await page.locator("#findings").innerText(), /One 15-minute price/);
+      assert.doesNotMatch(await page.locator("#delay-callout").innerText(), /15-minute price/);
+      assert.deepEqual(errors, []);
+    } finally {
+      await close();
+    }
+  });
+}
+
+test("without max_start the outlier note names the one series", async () => {
+  const { page, close } = await open({ route: routeSummary((s) => s.groups.forEach((g) => delete g.last7.max_start)) });
+  try {
+    await page.locator("#findings li").first().waitFor();
+    assert.equal(await page.locator("#delay-callout").innerText(), "Outlier: one eSett DK1 price took 10 h, against a 95th percentile of 92 min.");
+  } finally {
+    await close();
+  }
+});
+
+// A small share is stated as "1 in N" with two significant digits, not rounded up to 1 in 100.
+for (const [published, revised, sentence] of [
+  [639, 1, "About 1 in 640 (0.2%, 1 of 639) of the first prices ENTSO-E showed for Finland (FI) were changed later"],
+  [17773, 3, "About 1 in 5,900 (<0.1%, 3 of 17,773) of the first prices ENTSO-E showed for Finland (FI) were changed later"],
+  [100, 12, "About 1 in 8 (12%, 12 of 100) of the first prices ENTSO-E showed for Finland (FI) were changed later"]
+]) {
+  test(`the plain-language share when ${revised} of ${published} first prices were changed`, async () => {
+    const route = routeSummary((s) => {
+      s.groups.filter((g) => g.data === "imbalance").forEach((g) => { g.last7.revised = 0; g.last7.revised_share = 0; });
+      Object.assign(group(s, "entsoe", "FI").last7, { published, revised, revised_share: revised / published });
+    });
+    const { page, errors, close } = await open({ route });
+    try {
+      await page.locator("#findings li").first().waitFor();
+      const found = (await page.locator("#findings li").allInnerTexts()).filter((t) => t.startsWith("About "));
+      assert.equal(found.length, 1);
+      assert.ok(found[0].startsWith(sentence), found[0]);
+      assert.deepEqual(errors, []);
+    } finally {
+      await close();
+    }
+  });
+}
+
+test("the price board gives no percentage against a previous price under 10 EUR/MWh", async () => {
+  const route = routeSummary((s) => {
+    Object.assign(s.now[0], { price: 70.94, prev_price: 3 });
+    Object.assign(s.now[1], { price: 55, prev_price: 50 });
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#board .px").first().waitFor();
+    const cells = page.locator("#board td[data-label]");
+    const jump = cells.filter({ hasText: "70.94" }).locator(".chg");
+    assert.equal((await jump.innerText()).replace(/\s+/g, " "), "▲ +67.94");
+    assert.equal(await jump.locator(".pc").count(), 0);
+    const usual = cells.filter({ hasText: "55.00" }).locator(".chg");
+    assert.equal((await usual.innerText()).replace(/\s+/g, " "), "▲ +5.00 +10%");
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("the summary and the revision log are requested together, and a failed log is an empty one", async () => {
+  // The summary is held back until the log has been asked for: one after the other would wait for the timeout.
+  let asked;
+  const logAsked = new Promise((resolve) => { asked = resolve; });
+  let summaryWaitedForLog = null;
+  const handle = async (r) => {
+    if (r.request().url().endsWith("/revisions.json")) {
+      asked(true);
+      return r.abort("connectionfailed");
+    }
+    summaryWaitedForLog = await Promise.race([logAsked, new Promise((resolve) => setTimeout(resolve, 3000, false))]);
+    return r.continue();
+  };
+  const { page, errors, close } = await open({ route: { match: "**/data/*.json", handle } });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    assert.equal(summaryWaitedForLog, true);
+    assert.equal(await page.locator("#empty-state").isVisible(), false);
+    assert.match(await page.locator("#rev-table").innerText(), /0 rows/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// The fixture is old, so by the real clock it is stale.
+test("when the data is old, the page says so and the collector tile does not claim to be healthy", async () => {
+  const { page, errors, close } = await open();
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const banner = page.locator("#stale-banner");
+    assert.ok(await banner.isVisible());
+    assert.match(await banner.innerText(), /normally refreshes every 15 minutes, so the newest prices may be missing/);
+    assert.doesNotMatch(await banner.innerText(), /hourly/);
+    assert.match(await page.locator("#status-line").innerText(), /^Delayed/);
+    const tile = page.locator("#stats .stat").filter({ hasText: "Price changes logged" });
+    assert.match(await tile.locator(".tile-health").innerText(), /^No new data since 24 Oct, 19:00 UTC$/);
+    assert.equal(await tile.locator(".tile-health .dot.down").count(), 1);
+    assert.doesNotMatch(await tile.innerText(), /healthy|checks OK/i);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// The page's clock starts a few minutes after the summary was generated; the summary changes
+// on the second request, as when the collector publishes again.
+async function openWithClock(generated, later) {
+  let served = 0;
+  const handle = (r) => {
+    const s = structuredClone(SUMMARY);
+    s.generated_at = served++ ? later : generated;
+    s.polls_24h = { ok: 1440, skipped: 0, error: 2 };
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(s) });
+  };
+  const opened = await open({ clock: new Date("2026-11-08T12:00:00Z"), route: { match: "**/data/summary.json", handle } });
+  return { ...opened, served: () => served };
+}
+
+test("fresh data shows no banner and a healthy collector, and the page picks up newer data by itself", async () => {
+  const { page, errors, close, served } = await openWithClock("2026-11-08T11:50:00Z", "2026-11-08T12:10:00Z");
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    assert.equal(await page.locator("#stale-banner").isVisible(), false);
+    assert.match(await page.locator("#status-line").innerText(), /^Live · updated 11:50 UTC/);
+    assert.match(await page.locator("#stats .tile-health").innerText(), /^Collector healthy$/);
+    // Nothing is fetched again before 15 minutes have passed.
+    await page.clock.fastForward("14:00");
+    assert.equal(served(), 1);
+    await page.clock.fastForward("01:30");
+    await page.waitForFunction(() => /updated 12:10 UTC/.test(document.querySelector("#status-line").innerText));
+    assert.equal(served(), 2);
+    assert.match(await page.locator("#cite-text").innerText(), /collected since 21 October 2026/);
+    // The redrawn page still answers a click on the time-zone buttons.
+    await page.locator('.tz button[data-tz="Europe/Stockholm"]').click();
+    assert.match(await page.locator("#status-line").innerText(), /updated 13:10 CET/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("data that stops arriving turns the page to the delayed state without a reload", async () => {
+  const { page, errors, close } = await openWithClock("2026-11-08T11:50:00Z", "2026-11-08T11:50:00Z");
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    assert.equal(await page.locator("#stale-banner").isVisible(), false);
+    await page.clock.fastForward("50:00");
+    await page.locator("#stale-banner").waitFor({ state: "visible" });
+    assert.match(await page.locator("#stats .tile-health").innerText(), /^No new data since 11:50 UTC|^No new data since 8 Nov, 11:50 UTC/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// Serves the fixture revision log after `change` has edited a copy of it.
+const REVISIONS = JSON.parse(readFileSync(new URL("../fixtures/data/revisions.json", import.meta.url), "utf8"));
+function routeRevisions(change) {
+  const r = structuredClone(REVISIONS);
+  change(r);
+  return { match: "**/data/revisions.json", handle: (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(r) }) };
+}
+const full = (r) => { r.revisions = Array.from({ length: 500 }, () => r.revisions[0]); };
+
+test("a log that says what it keeps is described that way", async () => {
+  const route = routeRevisions((r) => {
+    full(r);
+    r.kept = { imbalance: 480, imbalance_total: 480, other: 20, other_total: 1200, other_since: "2026-10-23T08:30:00Z" };
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const notes = await page.locator("[data-revcap]").allInnerTexts();
+    assert.equal(notes.length, 2);
+    for (const note of notes) {
+      // The fixture covers the first 3.5 days of collection, and the note names that window.
+      assert.equal(note, "The log keeps every imbalance price change in the first 3.5 days of collection (480) and the newest 20 of 1,200 reserve price changes, " +
+        "back to 23 Oct, 08:30 UTC. The revision log, its CSV and the charts built from it cover only those entries.");
+    }
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("a log that had to cut imbalance changes does not claim to keep them all", async () => {
+  const route = routeRevisions((r) => {
+    full(r);
+    r.kept = { imbalance: 500, imbalance_total: 650, other: 0, other_total: 1200, other_since: null };
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const notes = await page.locator("[data-revcap]").allInnerTexts();
+    assert.equal(notes.length, 2);
+    for (const note of notes) {
+      assert.equal(note, "The log keeps the newest 500 of 650 imbalance price changes and the newest 0 of 1,200 reserve price changes. " +
+        "The revision log, its CSV and the charts built from it cover only those entries.");
+    }
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("a log that keeps everything has no note about a cap", async () => {
+  const { page, errors, close } = await open();
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    for (const note of await page.locator("[data-revcap]").allInnerTexts()) assert.equal(note, "");
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("without kept, a full log keeps the old wording", async () => {
+  const route = routeRevisions((r) => { full(r); delete r.kept; });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const counted = SUMMARY.groups.reduce((n, g) => n + g.last7.revisions, 0).toLocaleString("en-GB");
+    assert.equal(await page.locator("[data-revcap]").first().innerText(), "The log keeps only the newest 500 entries, back to 24 Oct, 18:44 UTC, " +
+      `while ${counted} changes were counted in the window. The revision log, its CSV and the charts built from it cover only those entries.`);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
 // A long zone label takes the room the name and the links need on one row.
 for (const [label, zones] of [["all zones", null], ["a long zone label", ["DK1", "DK2", "NO1", "NO2", "NO3", "NO4", "NO5"]]]) {
   test(`with ${label}, the section links and the name are never cut off and the top bar stays on screen at any width`, async () => {
@@ -215,9 +510,27 @@ for (const [label, zones] of [["all zones", null], ["a long zone label", ["DK1",
 }
 
 test("on a phone the menus open on screen and the price board and field list read without sideways scrolling", async () => {
-  const { page, errors, close } = await open({ contextOptions: { viewport: { width: 320, height: 640 }, isMobile: true, hasTouch: true } });
+  // One capacity price series in every zone, so its value label is long.
+  const everyZone = routeSummary((s) => {
+    const base = s.groups.find((g) => g.source === "svk" && g.data === "FCR-N");
+    s.groups = s.groups.filter((g) => g !== base).concat(["DK1", "DK2", "FI", "NO1", "NO2", "NO3", "NO4", "NO5", "SE1", "SE2", "SE3", "SE4"]
+      .map((zone) => ({ ...structuredClone(base), zone })));
+  });
+  const { page, errors, close } = await open({ route: everyZone, contextOptions: { viewport: { width: 320, height: 640 }, isMobile: true, hasTouch: true } });
   try {
     await page.locator("#stats .stat").first().waitFor();
+    // No value label on a chart runs past the screen; a long zone list gives way to a count.
+    for (const width of [320, 375]) {
+      await page.setViewportSize({ width, height: 640 });
+      await page.waitForFunction((w) => [...document.querySelectorAll("#lead-chart svg")].every((s) => s.viewBox.baseVal.width <= w), width);
+      await page.waitForTimeout(300);
+      const labels = await page.locator("text.val-label").evaluateAll((els) => els.map((e) => ({ text: e.textContent, right: e.getBoundingClientRect().right })));
+      assert.ok(labels.length > 0);
+      for (const l of labels) assert.ok(l.right <= width, `"${l.text}" ends at ${l.right}px on a ${width}px screen`);
+      assert.ok(labels.some((l) => l.text === "46 h · 12 zones"), `at ${width}px: ${labels.map((l) => l.text).join(" | ")}`);
+    }
+    await page.locator('#lead-chart .row-hit[aria-label*="DK1"]').focus();
+    assert.match(await page.locator("#tooltip").innerText(), /DK1, DK2, FI, NO1–NO5, SE1–SE4/);
     const fits = (sel) => page.locator(sel).evaluate((e) => {
       const b = e.getBoundingClientRect();
       return b.left >= -0.5 && b.right <= document.documentElement.clientWidth + 0.5;

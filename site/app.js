@@ -3,7 +3,8 @@
   "use strict";
 
   var CFG = window.NBW_CONFIG || {};
-  var STALE_MS = 3 * 60 * 60 * 1000;
+  var STALE_MS = 45 * 60 * 1000;  /* data is published every 15 minutes */
+  var REFRESH_MS = 15 * 60 * 1000;
 
   /* Sources are grouped into three categories so colour stays meaningful:
      eSett, ENTSO-E and the national TSOs (each TSO covers its own zones). */
@@ -26,7 +27,7 @@
     GLOSSARY[d.id.slice(2)] = [text("dt"), text("dd")];
   });
 
-  var state = { tz: load("nbw.tz", "UTC"), zones: load("nbw.zones", null), summary: null, revisions: [], tables: {}, cov: { label: "last 7 days" } };
+  var state = { tz: load("nbw.tz", "UTC"), zones: load("nbw.zones", null), summary: null, revisions: [], tables: {}, kept: null, cov: { label: "last 7 days" } };
   /* A stored value from an older version, or an edited one, must not break every time on the page. */
   if (["UTC", "Europe/Stockholm"].indexOf(state.tz) < 0) state.tz = "UTC";
   function inZones(z) { return !state.zones || state.zones.indexOf(z) >= 0; }
@@ -55,6 +56,8 @@
     return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
   }
   function uniq(a) { return a.filter(function (x, i) { return a.indexOf(x) === i; }); }
+  /* "a, b and c" */
+  function joinList(a) { return a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1]; }
   function cat(source) { return CAT[source] || "tso"; }
   function catColor(c) { return "var(--s-" + c + ")"; }
   function country(zone) { return COUNTRY[zone.slice(0, 2)] || zone; }
@@ -68,9 +71,11 @@
     var s = (x * 100).toFixed(d);
     return x > 0 && Number(s) === 0 ? "<" + Math.pow(10, -d).toFixed(d) + "%" : s + "%";
   }
-  /* "2 in 5", "1 in 6": the nearest simple fraction, for plain-language sentences. */
+  /* "2 in 5", "1 in 6": the nearest simple fraction, for plain-language sentences. A share
+     under a tenth is "1 in N" with N rounded to two significant digits ("1 in 5,900"). */
   function simpleFraction(x) {
-    var c = [[1, 2], [2, 5], [1, 3], [1, 4], [1, 5], [1, 6], [1, 8], [1, 10], [1, 20], [1, 50], [1, 100]];
+    if (x > 0 && x < 0.1) return "1 in " + fmtInt(Number((1 / x).toPrecision(2)));
+    var c = [[1, 2], [2, 5], [1, 3], [1, 4], [1, 5], [1, 6], [1, 8], [1, 10]];
     var best = c.reduce(function (b, f) { return Math.abs(f[0] / f[1] - x) < Math.abs(b[0] / b[1] - x) ? f : b; });
     return best[0] === 1 && best[1] === 2 ? "half" : best[0] + " in " + best[1];
   }
@@ -151,11 +156,11 @@
     return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + fill + '"' + stroke + "/>";
   }
   /* Price change, finance style: green up, red down, with the relative change when the
-     base is large enough for a percentage to mean something. */
+     base is large enough for a percentage to mean something (opts.minBase, 1 unless stated). */
   function chg(from, to, opts) {
     if (from == null || to == null) return "";
     var d = to - from, dir = d > 0 ? "up" : d < 0 ? "down" : "flat";
-    var p = Math.abs(from) >= 1 ? d / Math.abs(from) : null;
+    var p = Math.abs(from) >= (opts && opts.minBase || 1) ? d / Math.abs(from) : null;
     var arrow = { up: "▲", down: "▼", flat: "" }[dir];
     var text = dir === "flat" ? "0.00" : (d > 0 ? "+" : "−") + fmtPrice(Math.abs(d));
     return '<span class="chg ' + dir + (opts && opts.plain ? " plain" : "") + '">' + arrow + (arrow ? " " : "") + text +
@@ -319,6 +324,7 @@
     g2.font = "12.5px " + getComputedStyle(el).fontFamily;
     var widest = Math.max.apply(null, rows.map(function (r) { return g2.measureText(r.label).width; }));
     var stacked = widest + 14 > L, ROW = stacked ? 42 : 30;
+    g2.font = "12px " + getComputedStyle(el).fontFamily;  /* the value labels */
     if (stacked) L = 6;
     var plotW = W - L - VAL;
     var maxV = Math.max.apply(null, rows.map(function (r) { return r.value; }));
@@ -336,7 +342,9 @@
       body += '<path d="M' + x0 + " " + top + "H" + (x1 - rr) + "Q" + x1 + " " + top + " " + x1 + " " + (top + rr) +
         "V" + (top + BAR - rr) + "Q" + x1 + " " + (top + BAR) + " " + (x1 - rr) + " " + (top + BAR) + "H" + x0 +
         'Z" fill="' + r.color + '"/>';
-      body += '<text class="val-label" x="' + (x1 + 8) + '" y="' + (cy + 4) + '">' + esc(r.text) + "</text></g>";
+      /* A value label that would run past the chart gives way to its short form (the tooltip keeps the full one). */
+      var vtext = r.short && x1 + 8 + g2.measureText(r.text).width > W - 4 ? r.short : r.text;
+      body += '<text class="val-label" x="' + (x1 + 8) + '" y="' + (cy + 4) + '">' + esc(vtext) + "</text></g>";
       y += ROW;
     });
     var grid = "", ticks = "";
@@ -716,6 +724,46 @@
     return by;
   }
 
+  /* "7–10 h", from slowest-interval delays in minutes. */
+  function hoursSpan(lo, hi) {
+    var a = Math.round(lo / 60), b = Math.round(hi / 60);
+    return a === b ? "about " + a + " h" : a + "–" + b + " h";
+  }
+  /* The slowest 15-minute interval of several sources can be the very same interval: the
+     groups whose slowest interval started at one moment, at least 6 hours late, in at least
+     two source categories. The collector adds last7.max_start; without it nothing is shared. */
+  function sharedSlowest(imb) {
+    var by = {};
+    imb.forEach(function (g) {
+      var l = g.last7;
+      if (!validTime(l.max_start) || !(l.max >= 360)) return;
+      (by[l.max_start] = by[l.max_start] || []).push(g);
+    });
+    var best = null;
+    Object.keys(by).forEach(function (start) {
+      var gs = by[start];
+      if (gs.length < 2 || uniq(gs.map(function (g) { return cat(g.source); })).length < 2) return;
+      var top = Math.max.apply(null, gs.map(function (g) { return g.last7.max; }));
+      if (!best || gs.length > best.groups.length || (gs.length === best.groups.length && top > best.top)) {
+        best = { start: start, groups: gs, top: top };
+      }
+    });
+    if (!best) return null;
+    var maxes = best.groups.map(function (g) { return g.last7.max; });
+    var bySrc = {};
+    best.groups.forEach(function (g) { (bySrc[g.source] = bySrc[g.source] || []).push(g.zone); });
+    best.names = Object.keys(bySrc).sort(function (a, b) { return CAT_ORDER.indexOf(cat(a)) - CAT_ORDER.indexOf(cat(b)) || (SRC_LABEL[a] < SRC_LABEL[b] ? -1 : 1); }).map(function (k) {
+      return SRC_LABEL[k] + " (" + zoneRange(bySrc[k]) + ")";
+    });
+    best.span = hoursSpan(Math.min.apply(null, maxes), Math.max.apply(null, maxes));
+    best.every = CAT_ORDER.every(function (c) {
+      return !imb.some(function (g) { return cat(g.source) === c; }) ||
+        best.groups.some(function (g) { return cat(g.source) === c; });
+    });
+    best.at = dateTime(best.start) + " " + tzName(best.start);
+    return best;
+  }
+
   /* ---------- sections ---------- */
 
   /* The statistics use a rolling 7-day window. Until 7 days have been collected the window
@@ -769,8 +817,18 @@
     var logged = state.revisions.length, counted = sum((s.groups || []).map(function (g) { return (g.last7 && g.last7.revisions) || 0; }));
     var oldest = logged ? state.revisions.reduce(function (m, r) { return r.revised_at < m ? r.revised_at : m; }, state.revisions[0].revised_at) : null;
     var capped = logged >= 500 && oldest;
+    /* Newer logs say what they keep: every imbalance change of the window, then the newest others. */
+    var kp = state.kept, count = function (n) { return typeof n === "number" && isFinite(n) && n >= 0 && n === Math.floor(n); };
+    var keptText = !(kp && ["imbalance", "imbalance_total", "other", "other_total"].every(function (k) { return count(kp[k]); })) ? null
+      : !(kp.other < kp.other_total || kp.imbalance < kp.imbalance_total) ? ""
+      : "The log keeps " + (kp.imbalance === kp.imbalance_total
+          ? "every imbalance price change in the " + state.cov.label + " (" + fmtInt(kp.imbalance) + ")"
+          : "the newest " + fmtInt(kp.imbalance) + " of " + fmtInt(kp.imbalance_total) + " imbalance price changes") +
+        " and the newest " + fmtInt(kp.other) + " of " + fmtInt(kp.other_total) + " reserve price changes" +
+        (validTime(kp.other_since) ? ", back to " + dateTime(kp.other_since) + " " + tzName(kp.other_since) : "") +
+        ". The revision log, its CSV and the charts built from it cover only those entries.";
     document.querySelectorAll("[data-revcap]").forEach(function (el) {
-      el.textContent = capped ? "The log keeps only the newest " + fmtInt(logged) + " entries, back to " + dateTime(oldest) + " " + tzName(oldest) +
+      el.textContent = keptText != null ? keptText : capped ? "The log keeps only the newest " + fmtInt(logged) + " entries, back to " + dateTime(oldest) + " " + tzName(oldest) +
         ", while " + fmtInt(counted) + " changes were counted in the window. The revision log, its CSV and the charts built from it cover only those entries." : "";
     });
     var currency = sum((s.groups || []).map(function (g) { return (g.last7 && g.last7.currency_recalculations) || 0; }));
@@ -784,8 +842,10 @@
       : "Collection started on " + since + ". The current data covers " + c.span + ", so the 7-day window is not yet full and every figure on this page comes from that shorter sample; the daily view covers up to 30 closed UTC days.";
   }
 
+  function isStale(s) { return Date.now() - Date.parse(s.generated_at) > STALE_MS; }
+
   function renderStatus(s) {
-    var age = Date.now() - Date.parse(s.generated_at), stale = age > STALE_MS;
+    var stale = isStale(s);
     $("live-dot").classList.toggle("stale", stale);
     $("status-line").innerHTML = (stale ? "Delayed" : "Live") + " · updated " +
       '<time datetime="' + esc(s.generated_at) + '">' +
@@ -795,7 +855,7 @@
     var b = $("stale-banner");
     if (stale) {
       b.firstChild.textContent = "This data was generated " + relTime(s.generated_at) +
-        "; the hourly refresh has not arrived yet, so the newest prices may be missing.";
+        "; it normally refreshes every 15 minutes, so the newest prices may be missing.";
       b.hidden = false;
     } else {
       b.hidden = true;
@@ -833,9 +893,16 @@
     var p = s.polls_24h || {}, total = (p.ok || 0) + (p.skipped || 0) + (p.error || 0);
     var health = total ? (p.ok / total >= 0.98 ? "up" : p.ok / total >= 0.9 ? "amber" : "down") : "";
     var win = state.cov.label.charAt(0).toUpperCase() + state.cov.label.slice(1);
-    tiles.push(["Price changes logged", fmtInt(revisions), win + (total ? " · " + fmtPct(p.ok / total) + " of checks OK in the last 24 h" : ""),
-      health ? '<span class="tile-health"><span class="dot ' + health + '"></span>Collector ' +
-        (health === "up" ? "healthy" : health === "amber" ? "partly failing" : "failing") + "</span>" : ""]);
+    /* The check counts come from the same file, so a stalled collector cannot vouch for itself. */
+    var stale = state.summary && isStale(state.summary);
+    if (stale) {
+      tiles.push(["Price changes logged", fmtInt(revisions), win,
+        '<span class="tile-health"><span class="dot down"></span>No new data since ' + esc(dateTime(s.generated_at) + " " + tzName(s.generated_at)) + "</span>"]);
+    } else {
+      tiles.push(["Price changes logged", fmtInt(revisions), win + (total ? " · " + fmtPct(p.ok / total) + " of checks OK in the last 24 h" : ""),
+        health ? '<span class="tile-health"><span class="dot ' + health + '"></span>Collector ' +
+          (health === "up" ? "healthy" : health === "amber" ? "partly failing" : "failing") + "</span>" : ""]);
+    }
     $("stats").innerHTML = tiles.map(function (t) {
       return '<div class="stat"><dt>' + esc(t[0]) + '</dt><dd><span class="v">' + t[1] + "</span>" + (t[3] || "") +
         '<span class="s">' + esc(t[2]) + "</span></dd></div>";
@@ -861,6 +928,12 @@
       out.push(term("esett", "eSett") + ", where the money is settled, shows the same prices <b>" +
         Math.round(Math.min.apply(null, gaps)) + "–" + Math.round(Math.max.apply(null, gaps)) + " minutes later</b>.");
     }
+    var shared = sharedSlowest(imb);
+    if (shared) {
+      out.push("One 15-minute price, the one starting <b>" + esc(shared.at) + "</b>, first appeared <b>" + esc(shared.span) +
+        "</b> after it ended at " + (shared.every ? "<b>every source</b>: " : "the sources that share it: ") + esc(joinList(shared.names)) +
+        ", so the delay began before publication rather than at one publisher.");
+    }
     var top = imb.filter(function (g) { return g.last7.published >= 20 && g.last7.revised_share > 0; })
       .sort(function (a, b) { return b.last7.revised_share - a.last7.revised_share; })[0];
     if (top) {
@@ -868,7 +941,8 @@
         var gs = imb.filter(function (g) { return cat(g.source) === c; });
         return gs.length && gs.every(function (g) { return !g.last7.revisions; });
       }).map(function (c) { return CAT_LABEL[c]; });
-      var share = top.last7.revised_share;
+      /* From the counts: revised_share is rounded to 4 decimals, too coarse for "1 in N". */
+      var share = top.last7.published ? top.last7.revised / top.last7.published : top.last7.revised_share;
       var plain = "About " + simpleFraction(share);
       out.push("<b>" + plain + "</b> (" + fmtPct(share) + ", " + fmtInt(top.last7.revised) + " of " + fmtInt(top.last7.published) + ") of the first prices " + esc(SRC_LABEL[top.source]) + " showed for <b>" +
         esc(country(top.zone)) + (country(top.zone) !== top.zone ? " (" + esc(top.zone) + ")" : "") + "</b> were changed later" +
@@ -956,7 +1030,7 @@
         var late = limit != null && e.minutes_since_end > limit + 30;
         var isNewest = entries.length > 1 && e === newest && entries.filter(function (x) { return x.interval_start === e.interval_start; }).length === 1;
         return "<td" + lab + '><div class="px-line"><span class="px">' + fmtPrice(e.price) + (zero ? "*" : "") + "</span>" +
-          chg(e.prev_price, e.price) + "</div>" + sparkline(e.recent) +
+          chg(e.prev_price, e.price, { minBase: 10 }) + "</div>" + sparkline(e.recent) +
           '<span class="px-sub">For ' + esc(fmtTime(e.interval_start, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })) +
           " · " + esc(fmtDur(e.minutes_since_end)) + " ago" + (cat(e.source) === "tso" ? " · " + esc(SRC_LABEL[e.source]) : "") + "</span>" +
           (isNewest ? '<span class="badge newest">Newest</span> ' : "") +
@@ -1009,10 +1083,23 @@
     dotRange($("delay-chart"), rows, { axis: "minutes after the interval ends" });
     var slow = imb.filter(function (g) { return g.last7.max != null && g.last7.p95 != null && g.last7.max > 3 * g.last7.p95; })
       .sort(function (a, b) { return b.last7.max - a.last7.max; })[0];
-    $("delay-callout").innerHTML = slow
+    /* When several sources saw their slowest price for the same interval, it is not one series' outlier. */
+    var shared = slow && sharedSlowest(imb);
+    var together = shared && shared.groups.indexOf(slow) >= 0 ? shared : null;
+    $("delay-callout").innerHTML = together
+      ? "Outlier: one 15-minute price, the one starting " + esc(together.at) + ", took <b>" + esc(together.span) +
+        "</b> to appear at " + esc(joinList(together.names)) + " alike, against 95th percentiles of " + p95Range(together.groups) + "."
+      : slow
       ? "Outlier: one " + esc(SRC_LABEL[slow.source]) + " " + esc(slow.zone) + " price took <b>" + fmtDur(slow.last7.max) +
         "</b>, against a 95th percentile of " + fmtMin(slow.last7.p95) + "."
       : "";
+  }
+
+  function p95Range(gs) {
+    var v = gs.map(function (g) { return g.last7.p95; }).filter(function (x) { return x != null; });
+    if (!v.length) return "—";
+    var lo = Math.round(Math.min.apply(null, v)), hi = Math.round(Math.max.apply(null, v));
+    return lo === hi ? lo + " min" : lo + "–" + hi + " min";
   }
 
   function renderShare(s) {
@@ -1171,6 +1258,7 @@
       return {
         label: SRC_LABEL[a.source] + " · " + a.data, value: hours, color: catColor(cat(a.source)),
         text: fmtHours(hours) + " · " + zones,
+        short: fmtHours(hours) + " · " + a.groups.length + (a.groups.length === 1 ? " zone" : " zones"),
         aria: SRC_LABEL[a.source] + " " + a.data + ": " + fmtHours(hours) + " ahead, " + zones,
         tip: '<div class="t-title">' + esc(SRC_LABEL[a.source]) + " · " + esc(a.data) + "</div>" +
           tipRow(cat(a.source), "Median lead", fmtHours(hours)) +
@@ -1903,13 +1991,39 @@
     if (!(e.target.closest && e.target.closest(".term, [data-tip]"))) hideTip();
   });
 
+  /* The revision log, or null when it cannot be loaded (the page then works without one). */
+  function loadRevisions() {
+    return fetchJson("/data/revisions.json").then(function (rev) {
+      return rev && rev.schema === 1 ? { list: rev.revisions, kept: rev.kept || null } : null;
+    }).catch(function () { return null; });
+  }
+
+  /* Fetches both files again and redraws the page when the summary is newer than the one shown.
+     Everything renderAll draws is replaced rather than added to, and the listeners on the page
+     are bound once, so a redraw is the same as the one a time-zone change already does. */
+  var refreshedAt = Date.now();
+  function refresh() {
+    refreshedAt = Date.now();
+    Promise.all([fetchJson("/data/summary.json"), loadRevisions()]).then(function (got) {
+      var summary = got[0];
+      if (!summary || summary.schema !== 1 || !(Date.parse(summary.generated_at) > Date.parse(state.summary.generated_at))) return;
+      state.summary = summary;
+      if (got[1]) { state.revisions = got[1].list; state.kept = got[1].kept; }
+      renderAll();
+      renderCitation(summary);
+    }).catch(function (err) {
+      if (window.console) console.warn("data refresh failed:", err.message || err);
+    });
+  }
+
+  /* Both files are requested at once; a revision log that fails to load is an empty one. */
+  var revisionsRequest = loadRevisions().then(function (rev) { return rev || { list: [], kept: null }; });
   fetchJson("/data/summary.json").then(function (summary) {
     if (!summary || summary.schema !== 1) throw new Error("unsupported data schema");
     state.summary = summary;
-    return fetchJson("/data/revisions.json").then(function (rev) {
-      return rev && rev.schema === 1 ? rev.revisions : [];
-    }).catch(function () { return []; }).then(function (revs) {
-      state.revisions = revs;
+    return revisionsRequest.then(function (rev) {
+      state.revisions = rev.list;
+      state.kept = rev.kept;
       document.querySelectorAll("[data-needs-data]").forEach(function (el) { el.hidden = false; });
       renderAll();
       renderCitation(summary);
@@ -1922,7 +2036,15 @@
         clearTimeout(t);
         t = setTimeout(function () { renderCharts(); zdRender(); }, 150);
       });
-      setInterval(function () { renderStatus(summary); }, 60000);
+      setInterval(function () {
+        renderStatus(state.summary);
+        renderStats(view().s);
+      }, 60000);
+      /* While the page is open and visible, look for newer data as often as it is published. */
+      setInterval(function () { if (!document.hidden) refresh(); }, REFRESH_MS);
+      document.addEventListener("visibilitychange", function () {
+        if (!document.hidden && Date.now() - refreshedAt >= REFRESH_MS) refresh();
+      });
     });
   }).catch(function (err) {
     if (window.console) console.warn("summary data unavailable:", err.message || err);
