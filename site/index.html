@@ -368,7 +368,8 @@
                   <tr><td><code>last7.revisions</code>, <code>withdrawn</code>, <code>lag_p50_h</code></td><td>Price changes seen in the period to any interval, including ones first seen before it (so <code>revisions</code> can exceed <code>revised</code>), of which withdrawals, and the median hours from first price to change</td></tr>
                   <tr><td><code>last7.currency_recalculations</code></td><td>Changes to the Danish-krone price alone, the euro price unchanged (not counted as revisions)</td></tr>
                   <tr><td><code>last7.completions</code>, <code>completions_7d</code></td><td>Prices completed by a later auction, per zone-interval and per joint-market interval (not counted as revisions)</td></tr>
-                  <tr><td><code>groups[].daily[]</code></td><td>The same figures per closed UTC day, up to 30 days</td></tr>
+                  <tr><td><code>last7.completion_lag_p50_h</code>, <code>completion_lag_max_h</code></td><td>Median and longest hours from first price to the later auction completing it (null when none)</td></tr>
+                  <tr><td><code>groups[].daily[]</code></td><td>The same figures per closed UTC day, up to 30 days, each value counted on the UTC day it was first published. Energinet publishes its FCR prices for a day close to midnight UTC, so one day can hold two days' prices and the next none</td></tr>
                   <tr><td><code>now[]</code></td><td>Latest priced interval per source and zone, with price and minutes since it ended</td></tr>
                   <tr><td><code>revisions[]</code></td><td>One change: interval, field and unit, old and new value, first published and revised times (UTC), and a kind of changed, withdrawn or completed</td></tr>
                 </tbody>

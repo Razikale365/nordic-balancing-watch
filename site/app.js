@@ -63,6 +63,7 @@
   }
   /* Real revisions may be summed across zones, under a label that says so. */
   function zoneSum(gs) { return sum(gs.map(function (g) { return g.last7.revisions || 0; })); }
+  function lagOf(gs, k) { return median(gs.map(function (g) { return g.last7[k]; }).filter(function (v) { return v != null; })); }
 
   /* ---------- small helpers ---------- */
 
@@ -1022,9 +1023,9 @@
       })[0];
       var gs = bySrc[src], n = sum(gs.map(rePriced));
       var products = uniq(gs.map(function (g) { return g.data.split(" ")[0]; }));
-      var lag = median(gs.map(function (g) { return g.last7.lag_p50_h; }).filter(function (v) { return v != null; }));
       var leadMin = median(gs.map(function (g) { return g.last7.p50; }).filter(function (v) { return v != null && v < 0; }));
       var per = perZoneCompletions(gs), rev = zoneSum(gs);
+      var lag = per ? lagOf(gs, "completion_lag_p50_h") : lagOf(gs, "lag_p50_h");
       var note = per ? "completed by a later auction " + per + (rev ? "; " + fmtInt(rev) + " zone-quarter-hours revised" : "")
         : fmtInt(n) + " zone-quarter-hours re-priced";
       out.push("Prices for " + term("reserve", "standby power") + " (" + esc(products.join(" and ")) + " in " +
@@ -1343,7 +1344,7 @@
     var bySrc = {};
     revised.forEach(function (g) { (bySrc[g.source + "|" + g.data.split(" ")[0]] = bySrc[g.source + "|" + g.data.split(" ")[0]] || []).push(g); });
     $("lead-callout").innerHTML = Object.keys(bySrc).map(function (k) {
-      var gs = bySrc[k], lag = median(gs.map(function (g) { return g.last7.lag_p50_h; }).filter(function (v) { return v != null; }));
+      var gs = bySrc[k], lag = lagOf(gs, "lag_p50_h");
       var n = fmtInt(sum(gs.map(rePriced))), per = perZoneCompletions(gs), rev = zoneSum(gs);
       var head = esc(SRC_LABEL[gs[0].source]) + " " + esc(k.split("|")[1]) + " (" + esc(zoneRange(gs.map(function (g) { return g.zone; }))) + "): ";
       var after = lag != null ? ", typically " + fmtHours(lag) + " after first publication" : "";
@@ -1353,7 +1354,9 @@
           (per ? (rev ? " A later auction also completed " : "A later auction completed ") + per + "." : "");
       }
       if (per) {
-        return head + "completed by a later auction " + per + after +
+        var clag = lagOf(gs, "completion_lag_p50_h");
+        return head + "completed by a later auction " + per +
+          (clag != null ? ", typically " + fmtHours(clag) + " after first publication" : "") +
           (rev ? "; " + fmtInt(rev) + " zone-quarter-hours revised" : "") + ".";
       }
       return head + "re-priced in <b>" + n + " zone-quarter-hours</b>" + after + ".";
@@ -1370,12 +1373,14 @@
     var rows = reserveGroups(s).filter(function (g) { return g.last7.n > 0 || rePriced(g) > 0; });
     var ahead = function (m) { return m == null ? null : -m / 60; };
     var done = rows.some(function (g) { return g.last7.completions != null; });
+    var timed = done && rows.some(function (g) { return "completion_lag_p50_h" in g.last7; });
     /* Data files from before the completions field keep the old column and its note. */
-    $("restab-note").innerHTML = done
+    $("restab-note").innerHTML = (done
       ? "&ldquo;Revised&rdquo; counts every change recorded in the <span data-window>" + esc(state.cov.label) + "</span>, " +
         "including changes to delivery quarter-hours from before it; &ldquo;Completed later&rdquo; counts the prices a later auction completed, which are not revisions."
       : "&ldquo;Price changes&rdquo; counts every change recorded in the <span data-window>" + esc(state.cov.label) + "</span>, " +
-        "including changes to delivery quarter-hours from before it.";
+        "including changes to delivery quarter-hours from before it.") +
+      (timed ? " &ldquo;Revised after&rdquo; and &ldquo;Completed after&rdquo; are median hours from first publication." : "");
     if (state.tables.reserves) { state.tables.reserves.setRows(rows); return; }
     state.tables.reserves = new DataTable($("reserve-table"), {
       id: "reserves", rows: rows, page: 100, csvName: "nordic-reserve-publication.csv",
@@ -1391,7 +1396,8 @@
         { key: "revisions", label: done ? "Revised" : "Price changes", num: true, get: function (g) { return g.last7.revisions; }, html: function (g) { return fmtInt(g.last7.revisions); } },
         done ? { key: "completions", label: "Completed later", num: true, get: function (g) { return g.last7.completions; },
           html: function (g) { return g.last7.completions == null ? "—" : fmtInt(g.last7.completions); } } : null,
-        { key: "lag", label: "Typically after", csvLabel: "Typically after (h)", num: true, get: function (g) { return g.last7.lag_p50_h; }, html: function (g) { return fmtHours(g.last7.lag_p50_h); } }
+        { key: "lag", label: timed ? "Revised after" : "Typically after", csvLabel: timed ? "Revised after (h)" : "Typically after (h)", num: true, get: function (g) { return g.last7.lag_p50_h; }, html: function (g) { return fmtHours(g.last7.lag_p50_h); } },
+        timed ? { key: "doneLag", label: "Completed after", csvLabel: "Completed after (h)", num: true, get: function (g) { return g.last7.completion_lag_p50_h; }, html: function (g) { return fmtHours(g.last7.completion_lag_p50_h); } } : null
       ].filter(Boolean)
     });
   }

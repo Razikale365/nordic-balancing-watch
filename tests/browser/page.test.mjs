@@ -722,7 +722,7 @@ test("the reserve finding names the update lag only when it is known", async () 
     await close();
   }
   const route = routeSummary((s) => {
-    s.groups.filter((g) => g.data !== "imbalance").forEach((g) => { g.last7.lag_p50_h = null; });
+    s.groups.filter((g) => g.data !== "imbalance").forEach((g) => { g.last7.lag_p50_h = null; g.last7.completion_lag_p50_h = null; });
   });
   const noLag = await open({ route });
   try {
@@ -736,21 +736,69 @@ test("the reserve finding names the update lag only when it is known", async () 
   }
 });
 
+test("the findings and the call-out name the completion lag, not the revision lag", async () => {
+  const { page, errors, close } = await open();
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    assert.match(await page.locator("#findings").innerText(), /are then updated about 18 h later, when the next auction clears/);
+    const callout = await page.locator("#lead-callout").innerText();
+    assert.match(callout, /Energinet FCR-N \(DK2, SE1–SE4\): completed by a later auction in 18 quarter-hours in each zone, typically 18 h after first publication; 10 zone-quarter-hours revised/);
+    assert.doesNotMatch(callout, /6\.0 h/);
+    assert.match(callout, /Fingrid FCR-D \(FI\): re-priced in 4 zone-quarter-hours, typically 8\.7 h after first publication/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// Data files from a collector that counts completions but not yet their lag look like live
+// data does today: the update lag is simply unknown, and the table keeps its old columns.
+test("data without the completion lag renders with no timing", async () => {
+  const route = routeSummary((s) => {
+    s.groups.forEach((g) => { delete g.last7.completion_lag_p50_h; delete g.last7.completion_lag_max_h; });
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    assert.match(await page.locator("#findings").innerText(), /are then updated when the next auction clears/);
+    for (const line of (await page.locator("#lead-callout").innerText()).split("\n").filter((l) => l.startsWith("Energinet"))) {
+      assert.doesNotMatch(line, /typically/, line);
+    }
+    const heads = (await page.locator("#reserve-table thead .th-btn").allInnerTexts()).map((h) => h.toLowerCase());
+    assert.ok(heads.includes("typically after"), heads.join(" | "));
+    assert.ok(!heads.includes("revised after") && !heads.includes("completed after"), heads.join(" | "));
+    assert.equal(await page.locator("#restab-note").innerText(),
+      "“Revised” counts every change recorded in the first 3.5 days of collection, including changes to delivery quarter-hours from before it; “Completed later” counts the prices a later auction completed, which are not revisions.");
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
 test("the reserve table separates revisions from prices a later auction completed", async () => {
   const { page, errors, close } = await open();
   try {
     await page.locator("#stats .stat").first().waitFor();
     const heads = (await page.locator("#reserve-table thead .th-btn").allInnerTexts()).map((h) => h.toLowerCase());
     assert.ok(heads.includes("revised") && heads.includes("completed later"), heads.join(" | "));
+    assert.ok(heads.includes("revised after") && heads.includes("completed after"), heads.join(" | "));
+    assert.ok(!heads.includes("typically after"), heads.join(" | "));
     assert.ok(heads.includes("quarter-hours"), heads.join(" | "));
     assert.ok(!heads.includes("price changes") && !heads.includes("hours"), heads.join(" | "));
     assert.match(await page.locator("#restab-note").innerText(), /“Revised” counts every change.+“Completed later”/);
+    assert.match(await page.locator("#restab-note").innerText(), /median hours from first publication/);
     const enRow = page.locator("#reserve-table tbody tr").filter({ hasText: "Energinet" }).filter({ hasText: "FCR-N" }).first();
     assert.equal(await enRow.locator("td").nth(6).innerText(), "2");
     assert.equal(await enRow.locator("td").nth(7).innerText(), "18");
+    assert.equal(await enRow.locator("td").nth(8).innerText(), "6.0 h");
+    assert.equal(await enRow.locator("td").nth(9).innerText(), "18 h");
+    const edRow = page.locator("#reserve-table tbody tr").filter({ hasText: "Energinet" }).filter({ hasText: "FCR-D" }).first();
+    assert.equal(await edRow.locator("td").nth(8).innerText(), "—");
+    assert.equal(await edRow.locator("td").nth(9).innerText(), "18 h");
     const fiRow = page.locator("#reserve-table tbody tr").filter({ hasText: "Fingrid" });
     assert.equal(await fiRow.locator("td").nth(6).innerText(), "4");
     assert.equal(await fiRow.locator("td").nth(7).innerText(), "—");
+    assert.equal(await fiRow.locator("td").nth(9).innerText(), "—");
     assert.deepEqual(errors, []);
   } finally {
     await close();
@@ -767,7 +815,10 @@ test("data without the completion fields renders exactly as before", async () =>
         : (() => {
           const s = structuredClone(SUMMARY);
           delete s.completions_7d;
-          s.groups.forEach((g) => { delete g.last7.completions; (g.daily || []).forEach((d) => delete d.completions); });
+          s.groups.forEach((g) => {
+            delete g.last7.completions; delete g.last7.completion_lag_p50_h; delete g.last7.completion_lag_max_h;
+            (g.daily || []).forEach((d) => delete d.completions);
+          });
           return s;
         })();
       return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
@@ -784,6 +835,7 @@ test("data without the completion fields renders exactly as before", async () =>
     assert.equal(await page.locator("#rev-table tbody tr").count(), 3);
     const heads = (await page.locator("#reserve-table thead .th-btn").allInnerTexts()).map((h) => h.toLowerCase());
     assert.ok(heads.includes("price changes") && !heads.includes("revised") && !heads.includes("completed later"), heads.join(" | "));
+    assert.ok(heads.includes("typically after") && !heads.includes("revised after") && !heads.includes("completed after"), heads.join(" | "));
     assert.equal(await page.locator("#restab-note").innerText(),
       "“Price changes” counts every change recorded in the first 3.5 days of collection, including changes to delivery quarter-hours from before it.");
     assert.match(await page.locator("#findings").innerText(), /14 zone-quarter-hours re-priced/);

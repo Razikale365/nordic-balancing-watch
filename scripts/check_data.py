@@ -81,7 +81,8 @@ def check_last7(l, where, errors):
     # Optional: the start of the 15-minute interval behind `max`.
     if l.get("max_start") is not None and not is_ts(l["max_start"]):
         errors.append(f"{where}: last7.max_start must be an ISO timestamp ending in Z or null")
-    for k in ("p50", "p95", "max", "lag_p50_h", "lag_max_h"):
+    for k in ("p50", "p95", "max", "lag_p50_h", "lag_max_h",
+              "completion_lag_p50_h", "completion_lag_max_h"):
         if l.get(k) is not None and not is_num(l.get(k)):
             errors.append(f"{where}: last7.{k} must be a number or null")
     rs = l.get("revised_share")
