@@ -12,6 +12,10 @@ const SECURITY = {
   "cache-control": "no-store"
 };
 
+// Real interest arrives a few sign-ups at a time; a script filling the table does not. Counted
+// from the rows themselves, so no address or IP is kept for it.
+const MAX_PER_HOUR = 30;
+
 // 32 random bytes, base64url without padding.
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 
@@ -93,6 +97,12 @@ export async function onRequestPost({ request, env }) {
   // link still works); otherwise anyone who knows an address could obtain a link to remove it.
   const removeToken = newToken();
   try {
+    const since = new Date(Date.now() - 3600 * 1000).toISOString().replace(/\.\d+Z$/, "Z");
+    const recent = await env.DB.prepare("SELECT COUNT(*) AS n FROM waitlist WHERE created_at >= ?1")
+      .bind(since).first();
+    if (recent && recent.n >= MAX_PER_HOUR) {
+      return json({ ok: false, error: "too many sign-ups in the last hour; please try again later" }, 429);
+    }
     await env.DB.prepare(
       "INSERT INTO waitlist (email, role, created_at, remove_hash) VALUES (?1, ?2, ?3, ?4)" +
         " ON CONFLICT(email) DO NOTHING"
