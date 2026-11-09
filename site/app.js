@@ -1343,15 +1343,54 @@
     });
   }
 
+  /* The log lists revisions; prices a later auction completed join only when asked for,
+     and then the Type column shows itself so they are not mistaken for corrections. */
+  function doneToggle(t, revs) {
+    var done = revs.filter(isCompletion), label = t.doneLabel;
+    if (!done.length) {
+      if (label) {
+        label.remove(); t.doneLabel = null;
+        if (t.doneShown && t.hidden.indexOf("kind") < 0) t.hidden.push("kind");
+        t.doneShown = false;
+      }
+      return;
+    }
+    if (!label) {
+      label = t.doneLabel = document.createElement("label");
+      label.className = "rev-done";
+      var box = document.createElement("input");
+      box.type = "checkbox";
+      box.addEventListener("change", function () {
+        t.doneShown = box.checked;
+        var i = t.hidden.indexOf("kind");
+        if (box.checked) { if (i >= 0) t.hidden.splice(i, 1); } else if (i < 0) t.hidden.push("kind");
+        t.setRows(box.checked ? t.allRows : t.realRows);
+      });
+      label.appendChild(box);
+      label.appendChild(document.createElement("span"));
+      t.el.insertBefore(label, t.el.firstChild);
+    }
+    var m = done.length;
+    label.lastChild.textContent = "Also list prices completed by a later auction (" +
+      fmtInt(dedupeJoint(done).length) + ", shown as " + fmtInt(m) + " zone row" + (m === 1 ? "" : "s") + ")";
+  }
+
   function renderRevisionTable(revs) {
     var change = function (r) { return r.new == null ? null : r.new - r.old; };
     var after = function (r) { return (Date.parse(r.revised_at) - Date.parse(r.first_published_at)) / 3600000; };
-    if (state.tables.revisions) { state.tables.revisions.setRows(revs); return; }
-    state.tables.revisions = new DataTable($("rev-table"), {
-      id: "revisions", rows: revs, page: 50, csvName: "nordic-balancing-revisions.csv",
+    var real = revs.filter(function (r) { return !isCompletion(r); });
+    var t = state.tables.revisions;
+    if (t) {
+      t.allRows = revs; t.realRows = real;
+      doneToggle(t, revs);
+      t.setRows(t.doneShown ? revs : real);
+      return;
+    }
+    t = state.tables.revisions = new DataTable($("rev-table"), {
+      id: "revisions", rows: real, page: 50, csvName: "nordic-balancing-revisions.csv",
       sort: { key: "revised_at", dir: "desc" }, filters: ["source", "data", "zone", "kind"],
       search: "Search zone, source, product…",
-      empty: revs.length ? "No revision matches these filters." : "No revision has been recorded in the " + state.cov.label + ".",
+      empty: real.length ? "No revision matches these filters." : "No revision has been recorded in the " + state.cov.label + ".",
       columns: [
         { key: "revised_at", label: "Revised at", time: true, get: function (r) { return r.revised_at; },
           text: function (r) { return dateTime(r.revised_at); },
@@ -1377,6 +1416,8 @@
           html: function (r) { return esc(dateTime(r.first_published_at)); } }
       ]
     });
+    t.allRows = revs; t.realRows = real;
+    doneToggle(t, revs);
   }
 
   function renderTrend(s) {

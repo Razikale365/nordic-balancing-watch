@@ -615,6 +615,8 @@ tbody tr:hover td { background: var(--row-hover); }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
 td .muted, .muted { color: var(--muted); }
 .dt-more { display: flex; justify-content: center; margin-top: 12px; }
+.rev-done { display: flex; align-items: baseline; gap: 8px; font-size: 13.5px; color: var(--ink-2); margin: 16px 0 0; }
+.rev-done input { margin: 0; }
 .dt-more:empty { display: none; }
 .dt-empty td { padding: 28px; text-align: center; color: var(--muted); }
 

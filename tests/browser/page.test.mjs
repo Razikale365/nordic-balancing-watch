@@ -631,12 +631,22 @@ test("the chart, the recent list and the log keep completions apart from revisio
     // The recent list still shows each zone, tagged as a completion rather than a revision.
     assert.equal(await page.locator("#recent .tag.completed").count(), 5);
     assert.match(await page.locator("#recent").innerText(), /\+1 more in the revision log/);
-    // The log lists every zone row, each tagged once its Type column is shown.
-    await page.locator("#rev-table [data-role=cols]").click();
-    await page.locator('#rev-table [data-role="pop"] input[data-k="kind"]').check();
+    // The log lists revisions only; the completions join on request, tagged.
+    const toggle = page.locator("#rev-table .rev-done");
+    assert.match(await toggle.innerText(), /Also list prices completed by a later auction \(1, shown as 5 zone rows\)/);
+    assert.equal(await page.locator("#rev-table .tag.completed").count(), 0);
+    assert.equal(await page.locator("#rev-table tbody tr").count(), 6);
+    assert.equal(await page.locator("#rev-table [data-role=count]").innerText(), "6 rows");
+    await toggle.locator("input").check();
     assert.equal(await page.locator("#rev-table .tag.completed").count(), 5);
-    const kinds = await page.locator('#rev-table [data-filter="kind"] option').allInnerTexts();
-    assert.ok(kinds.includes("Completed by a later auction"), kinds.join(" | "));
+    assert.equal(await page.locator("#rev-table tbody tr").count(), 11);
+    assert.equal(await page.locator("#rev-table [data-role=count]").innerText(), "11 rows");
+    const heads = (await page.locator("#rev-table thead .th-btn").allInnerTexts()).map((h) => h.toLowerCase());
+    assert.ok(heads.includes("type"), heads.join(" | "));
+    // Unchecked again, the log is the default revision log.
+    await toggle.locator("input").uncheck();
+    assert.equal(await page.locator("#rev-table tbody tr").count(), 6);
+    assert.equal(await page.locator("#rev-table .tag.completed").count(), 0);
     assert.deepEqual(errors, []);
   } finally {
     await close();
@@ -683,7 +693,9 @@ test("data without the completion fields renders exactly as before", async () =>
     assert.doesNotMatch(await page.locator("#stats").innerText(), /completed by a later auction/i);
     assert.equal(await page.locator("#hist-chart .strip").count(), 3);
     assert.equal(await page.locator("#recent .tag.completed").count(), 0);
+    assert.equal(await page.locator("#rev-table .rev-done").count(), 0);
     assert.equal(await page.locator("#rev-table .tag.completed").count(), 0);
+    assert.equal(await page.locator("#rev-table tbody tr").count(), 6);
     assert.deepEqual(errors, []);
   } finally {
     await close();
