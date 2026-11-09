@@ -3,13 +3,173 @@
   "generated_at": "2026-10-24T19:00:00Z",
   "collecting_since": "2026-10-21T06:00:00Z",
   "observations_total": 15234,
-  "completions_7d": {"zone_intervals": 90, "market_intervals": 18},
+  "completions_7d": {"zone_intervals": 170, "market_intervals": 34},
   "polls_24h": {"ok": 1410, "skipped": 30, "error": 2},
   "http_24h": [
     {"source": "esett", "polls": 96, "requests": 192, "non_200": 1, "retry_sleep_s": 4.5},
     {"source": "entsoe", "polls": 96, "requests": 96, "non_200": 0, "retry_sleep_s": 0}
   ],
   "groups": [
+    {
+      "source": "energidataservice",
+      "data": "FCR-D down",
+      "zone": "DK2",
+      "last7": {
+        "n": 168, "excluded": 0,
+        "p50": -2880.0, "p95": -1440.0, "max": -90.0,
+        "published": 168, "revised": 0, "revised_share": 0.0,
+        "revisions": 0, "completions": 6, "withdrawn": 0, "lag_p50_h": 18.0, "lag_max_h": 19.5
+      },
+      "daily": [
+        {"day": "2026-10-21", "n": 24, "p50": -2890.0, "p95": -1450.0, "published": 24, "revised": 0, "revisions": 0, "completions": 2},
+        {"day": "2026-10-22", "n": 24, "p50": -2870.0, "p95": -1430.0, "published": 24, "revised": 0, "revisions": 0, "completions": 2},
+        {"day": "2026-10-23", "n": 24, "p50": -2885.0, "p95": -1445.0, "published": 24, "revised": 0, "revisions": 0, "completions": 2}
+      ]
+    },
+    {
+      "source": "energidataservice",
+      "data": "FCR-D down",
+      "zone": "SE1",
+      "last7": {
+        "n": 168, "excluded": 0,
+        "p50": -2880.0, "p95": -1440.0, "max": -90.0,
+        "published": 168, "revised": 0, "revised_share": 0.0,
+        "revisions": 0, "completions": 6, "withdrawn": 0, "lag_p50_h": 18.0, "lag_max_h": 19.5
+      },
+      "daily": [
+        {"day": "2026-10-21", "n": 24, "p50": -2890.0, "p95": -1450.0, "published": 24, "revised": 0, "revisions": 0, "completions": 2},
+        {"day": "2026-10-22", "n": 24, "p50": -2870.0, "p95": -1430.0, "published": 24, "revised": 0, "revisions": 0, "completions": 2},
+        {"day": "2026-10-23", "n": 24, "p50": -2885.0, "p95": -1445.0, "published": 24, "revised": 0, "revisions": 0, "completions": 2}
+      ]
+    },
+    {
+      "source": "energidataservice",
+      "data": "FCR-D down",
+      "zone": "SE2",
+      "last7": {
+        "n": 168, "excluded": 0,
+        "p50": -2880.0, "p95": -1440.0, "max": -90.0,
+        "published": 168, "revised": 0, "revised_share": 0.0,
+        "revisions": 0, "completions": 6, "withdrawn": 0, "lag_p50_h": 18.0, "lag_max_h": 19.5
+      },
+      "daily": [
+        {"day": "2026-10-21", "n": 24, "p50": -2890.0, "p95": -1450.0, "published": 24, "revised": 0, "revisions": 0, "completions": 2},
+        {"day": "2026-10-22", "n": 24, "p50": -2870.0, "p95": -1430.0, "published": 24, "revised": 0, "revisions": 0, "completions": 2},
+        {"day": "2026-10-23", "n": 24, "p50": -2885.0, "p95": -1445.0, "published": 24, "revised": 0, "revisions": 0, "completions": 2}
+      ]
+    },
+    {
+      "source": "energidataservice",
+      "data": "FCR-D down",
+      "zone": "SE3",
+      "last7": {
+        "n": 168, "excluded": 0,
+        "p50": -2880.0, "p95": -1440.0, "max": -90.0,
+        "published": 168, "revised": 0, "revised_share": 0.0,
+        "revisions": 0, "completions": 6, "withdrawn": 0, "lag_p50_h": 18.0, "lag_max_h": 19.5
+      },
+      "daily": [
+        {"day": "2026-10-21", "n": 24, "p50": -2890.0, "p95": -1450.0, "published": 24, "revised": 0, "revisions": 0, "completions": 2},
+        {"day": "2026-10-22", "n": 24, "p50": -2870.0, "p95": -1430.0, "published": 24, "revised": 0, "revisions": 0, "completions": 2},
+        {"day": "2026-10-23", "n": 24, "p50": -2885.0, "p95": -1445.0, "published": 24, "revised": 0, "revisions": 0, "completions": 2}
+      ]
+    },
+    {
+      "source": "energidataservice",
+      "data": "FCR-D down",
+      "zone": "SE4",
+      "last7": {
+        "n": 168, "excluded": 0,
+        "p50": -2880.0, "p95": -1440.0, "max": -90.0,
+        "published": 168, "revised": 0, "revised_share": 0.0,
+        "revisions": 0, "completions": 6, "withdrawn": 0, "lag_p50_h": 18.0, "lag_max_h": 19.5
+      },
+      "daily": [
+        {"day": "2026-10-21", "n": 24, "p50": -2890.0, "p95": -1450.0, "published": 24, "revised": 0, "revisions": 0, "completions": 2},
+        {"day": "2026-10-22", "n": 24, "p50": -2870.0, "p95": -1430.0, "published": 24, "revised": 0, "revisions": 0, "completions": 2},
+        {"day": "2026-10-23", "n": 24, "p50": -2885.0, "p95": -1445.0, "published": 24, "revised": 0, "revisions": 0, "completions": 2}
+      ]
+    },
+    {
+      "source": "energidataservice",
+      "data": "FCR-D up",
+      "zone": "DK2",
+      "last7": {
+        "n": 168, "excluded": 0,
+        "p50": -2880.0, "p95": -1440.0, "max": -90.0,
+        "published": 168, "revised": 0, "revised_share": 0.0,
+        "revisions": 0, "completions": 10, "withdrawn": 0, "lag_p50_h": 18.0, "lag_max_h": 19.5
+      },
+      "daily": [
+        {"day": "2026-10-21", "n": 24, "p50": -2890.0, "p95": -1450.0, "published": 24, "revised": 0, "revisions": 0, "completions": 4},
+        {"day": "2026-10-22", "n": 24, "p50": -2870.0, "p95": -1430.0, "published": 24, "revised": 0, "revisions": 0, "completions": 3},
+        {"day": "2026-10-23", "n": 24, "p50": -2885.0, "p95": -1445.0, "published": 24, "revised": 0, "revisions": 0, "completions": 3}
+      ]
+    },
+    {
+      "source": "energidataservice",
+      "data": "FCR-D up",
+      "zone": "SE1",
+      "last7": {
+        "n": 168, "excluded": 0,
+        "p50": -2880.0, "p95": -1440.0, "max": -90.0,
+        "published": 168, "revised": 0, "revised_share": 0.0,
+        "revisions": 0, "completions": 10, "withdrawn": 0, "lag_p50_h": 18.0, "lag_max_h": 19.5
+      },
+      "daily": [
+        {"day": "2026-10-21", "n": 24, "p50": -2890.0, "p95": -1450.0, "published": 24, "revised": 0, "revisions": 0, "completions": 4},
+        {"day": "2026-10-22", "n": 24, "p50": -2870.0, "p95": -1430.0, "published": 24, "revised": 0, "revisions": 0, "completions": 3},
+        {"day": "2026-10-23", "n": 24, "p50": -2885.0, "p95": -1445.0, "published": 24, "revised": 0, "revisions": 0, "completions": 3}
+      ]
+    },
+    {
+      "source": "energidataservice",
+      "data": "FCR-D up",
+      "zone": "SE2",
+      "last7": {
+        "n": 168, "excluded": 0,
+        "p50": -2880.0, "p95": -1440.0, "max": -90.0,
+        "published": 168, "revised": 0, "revised_share": 0.0,
+        "revisions": 0, "completions": 10, "withdrawn": 0, "lag_p50_h": 18.0, "lag_max_h": 19.5
+      },
+      "daily": [
+        {"day": "2026-10-21", "n": 24, "p50": -2890.0, "p95": -1450.0, "published": 24, "revised": 0, "revisions": 0, "completions": 4},
+        {"day": "2026-10-22", "n": 24, "p50": -2870.0, "p95": -1430.0, "published": 24, "revised": 0, "revisions": 0, "completions": 3},
+        {"day": "2026-10-23", "n": 24, "p50": -2885.0, "p95": -1445.0, "published": 24, "revised": 0, "revisions": 0, "completions": 3}
+      ]
+    },
+    {
+      "source": "energidataservice",
+      "data": "FCR-D up",
+      "zone": "SE3",
+      "last7": {
+        "n": 168, "excluded": 0,
+        "p50": -2880.0, "p95": -1440.0, "max": -90.0,
+        "published": 168, "revised": 0, "revised_share": 0.0,
+        "revisions": 0, "completions": 10, "withdrawn": 0, "lag_p50_h": 18.0, "lag_max_h": 19.5
+      },
+      "daily": [
+        {"day": "2026-10-21", "n": 24, "p50": -2890.0, "p95": -1450.0, "published": 24, "revised": 0, "revisions": 0, "completions": 4},
+        {"day": "2026-10-22", "n": 24, "p50": -2870.0, "p95": -1430.0, "published": 24, "revised": 0, "revisions": 0, "completions": 3},
+        {"day": "2026-10-23", "n": 24, "p50": -2885.0, "p95": -1445.0, "published": 24, "revised": 0, "revisions": 0, "completions": 3}
+      ]
+    },
+    {
+      "source": "energidataservice",
+      "data": "FCR-D up",
+      "zone": "SE4",
+      "last7": {
+        "n": 168, "excluded": 0,
+        "p50": -2880.0, "p95": -1440.0, "max": -90.0,
+        "published": 168, "revised": 0, "revised_share": 0.0,
+        "revisions": 0, "completions": 10, "withdrawn": 0, "lag_p50_h": 18.0, "lag_max_h": 19.5
+      },
+      "daily": [
+        {"day": "2026-10-21", "n": 24, "p50": -2890.0, "p95": -1450.0, "published": 24, "revised": 0, "revisions": 0, "completions": 4},
+        {"day": "2026-10-22", "n": 24, "p50": -2870.0, "p95": -1430.0, "published": 24, "revised": 0, "revisions": 0, "completions": 3},
+        {"day": "2026-10-23", "n": 24, "p50": -2885.0, "p95": -1445.0, "published": 24, "revised": 0, "revisions": 0, "completions": 3}
+      ]
+    },
     {
       "source": "energidataservice",
       "data": "FCR-N",

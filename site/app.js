@@ -49,12 +49,15 @@
   /* Every price change seen on a series in the window: revisions plus completions. */
   function rePriced(g) { return (g.last7.revisions || 0) + (g.last7.completions || 0); }
   /* A completion is one event in a joint market, so it is never summed across zones:
-     say it per zone — equal zones, a min–max range, or a single zone's count. */
+     the zone's products are summed first, then said per zone — equal zones, a min–max
+     range, or a single zone's count. */
   function perZoneCompletions(gs) {
-    var done = gs.map(function (g) { return g.last7.completions || 0; });
+    var byZone = {};
+    gs.forEach(function (g) { byZone[g.zone] = (byZone[g.zone] || 0) + (g.last7.completions || 0); });
+    var done = Object.keys(byZone).map(function (z) { return byZone[z]; });
     if (!sum(done)) return null;
     var lo = Math.min.apply(null, done), hi = Math.max.apply(null, done);
-    return gs.length === 1 ? "in <b>" + fmtInt(lo) + " quarter-hours</b>"
+    return done.length === 1 ? "in <b>" + fmtInt(lo) + " quarter-hours</b>"
       : lo === hi ? "in <b>" + fmtInt(lo) + " quarter-hours in each zone</b>"
       : "in <b>" + fmtInt(lo) + "–" + fmtInt(hi) + " quarter-hours per zone</b>";
   }
