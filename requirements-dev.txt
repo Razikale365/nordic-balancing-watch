@@ -1,2 +1,2 @@
 # Test-only Python dependencies (CI installs these; Dependabot keeps them current).
-pytest==9.1.1
+pytest==9.2.0
