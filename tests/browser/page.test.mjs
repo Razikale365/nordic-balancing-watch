@@ -144,12 +144,12 @@ for (const [label, published, revised, value, sub] of [
   ["a usual share changed", 10000, 1234, "12.3%", "1,234 of 10,000 imbalance prices"],
   ["nothing was first seen", 0, 0, null, null]
 ]) {
-  test(`the share of first prices changed later when ${label}`, async () => {
+  test(`the share of first prices changed so far when ${label}`, async () => {
     const handle = (r) => r.fulfill({ status: 200, contentType: "application/json", body: summaryWith(published, revised) });
     const { page, errors, close } = await open({ route: { match: "**/data/summary.json", handle } });
     try {
       await page.locator("#stats .stat").first().waitFor();
-      const tile = page.locator("#stats .stat").filter({ hasText: "First prices changed later" });
+      const tile = page.locator("#stats .stat").filter({ hasText: "First prices changed so far" });
       if (value == null) {
         assert.equal(await tile.count(), 0);
       } else {
@@ -264,10 +264,12 @@ test("without max_start the outlier note names the one series", async () => {
 });
 
 // A small share is stated as "1 in N" with two significant digits, not rounded up to 1 in 100.
+// Without 14-day-old prices the sentence is about the window's own first prices, so it says
+// "so far"; the delay of other, older changes is not attached to it.
 for (const [published, revised, sentence] of [
-  [639, 1, "About 1 in 640 (0.2%, 1 of 639) of the first prices ENTSO-E showed for Finland (FI) were changed later"],
-  [17773, 3, "About 1 in 5,900 (<0.1%, 3 of 17,773) of the first prices ENTSO-E showed for Finland (FI) were changed later"],
-  [100, 12, "About 1 in 8 (12%, 12 of 100) of the first prices ENTSO-E showed for Finland (FI) were changed later"]
+  [639, 1, "About 1 in 640 (0.2%, 1 of 639) of the first prices ENTSO-E showed for Finland (FI) have been changed so far."],
+  [17773, 3, "About 1 in 5,900 (<0.1%, 3 of 17,773) of the first prices ENTSO-E showed for Finland (FI) have been changed so far."],
+  [100, 12, "About 1 in 8 (12%, 12 of 100) of the first prices ENTSO-E showed for Finland (FI) have been changed so far."]
 ]) {
   test(`the plain-language share when ${revised} of ${published} first prices were changed`, async () => {
     const route = routeSummary((s) => {
@@ -342,7 +344,7 @@ test("when the data is old, the page says so and the collector tile does not cla
     assert.match(await banner.innerText(), /normally refreshes every 15 minutes, so the newest prices may be missing/);
     assert.doesNotMatch(await banner.innerText(), /hourly/);
     assert.match(await page.locator("#status-line").innerText(), /^Delayed/);
-    const tile = page.locator("#stats .stat").filter({ hasText: "Prices corrected" });
+    const tile = page.locator("#stats .stat").filter({ hasText: "Prices revised" });
     assert.match(await tile.locator(".tile-health").innerText(), /^No new data since 24 Oct, 19:00 UTC$/);
     assert.equal(await tile.locator(".tile-health .dot.down").count(), 1);
     assert.doesNotMatch(await tile.innerText(), /healthy|checks OK/i);
@@ -599,16 +601,18 @@ test("on a phone the menus open on screen and the price board and field list rea
 
 // Auction completions are not revisions: the tile counts only revisions and names them,
 // and every figure or chart keeps them visible but separate, counting a joint-market
-// completion once. The fixture logs one correction once per source: the tile counts the
-// corrected price once and says how many records that rests on.
-test("the headline tile counts each corrected price once and names the completions", async () => {
+// completion once. The fixture logs one revision once per source: the tile counts the
+// revised price once and says how many records that rests on. No source says why it
+// changed a price, so the tile says "revised", never "corrected".
+test("the headline tile counts each revised price once and names the completions", async () => {
   const { page, errors, close } = await open();
   try {
     await page.locator("#stats .stat").first().waitFor();
-    const tile = page.locator("#stats .stat").filter({ hasText: "Prices corrected" });
+    assert.equal(await page.locator("#stats .stat").filter({ hasText: /corrected/i }).count(), 0);
+    const tile = page.locator("#stats .stat").filter({ hasText: "Prices revised" });
     assert.equal(await tile.locator(".v").innerText(), "1");
     assert.match(await tile.locator(".s").innerText(), /^3 changes logged across 3 sources · /);
-    assert.match(await tile.locator(".s").innerText(), /plus 34 reserve prices completed by a later auction/);
+    assert.match(await tile.locator(".s").innerText(), /plus 34 reserve quarter-hours completed by a later auction/);
     assert.deepEqual(errors, []);
   } finally {
     await close();
@@ -629,11 +633,12 @@ test("the chart, the recent list and the log keep completions apart from revisio
     assert.equal(done.length, 1);
     assert.match(done[0], /most in an hour: 1/);
     assert.match(tso, /most in an hour: 1/);
-    // The recent list still shows each zone, tagged as a completion rather than a revision.
-    assert.equal(await page.locator("#recent .tag.completed").count(), 5);
+    // The recent list shows the auction once, with its zones, tagged as a completion.
+    assert.equal(await page.locator("#recent .tag.completed").count(), 1);
+    assert.match(await page.locator("#recent").innerText(), /Energinet · DK2, SE1–SE4 FCR-N Completed by a later auction/);
     // The log lists revisions only; the completions join on request, tagged.
     const toggle = page.locator("#rev-table .rev-done");
-    assert.match(await toggle.innerText(), /Also list prices completed by a later auction \(1, shown as 5 zone rows\)/);
+    assert.match(await toggle.innerText(), /Also list completions by a later auction \(1 log entry, shown as 5 zone rows\)/);
     assert.equal(await page.locator("#rev-table .tag.completed").count(), 0);
     assert.equal(await page.locator("#rev-table tbody tr").count(), 3);
     assert.equal(await page.locator("#rev-table [data-role=count]").innerText(), "3 rows");
@@ -653,7 +658,7 @@ test("the chart, the recent list and the log keep completions apart from revisio
   }
 });
 
-test("the recent list's remaining count counts a joint-market completion once", async () => {
+test("the recent list shows each joint-market completion once and counts the rest the same way", async () => {
   const route = routeRevisions((r) => {
     const extra = r.revisions.filter((x) => x.kind === "completed").map((x) =>
       ({ ...x, interval_start: "2026-10-24T14:00:00Z", revised_at: "2026-10-24T16:30:00Z" }));
@@ -663,8 +668,200 @@ test("the recent list's remaining count counts a joint-market completion once", 
   const { page, errors, close } = await open({ route });
   try {
     await page.locator("#recent li").first().waitFor();
-    // Ten more zone rows (two auctions of five zones) leave one more completion.
-    assert.match(await page.locator("#recent").innerText(), /\+1 more in the revision log/);
+    // Three revisions and ten zone rows (two auctions of five zones) are five changes, all listed.
+    assert.equal(await page.locator("#recent li").count(), 5);
+    assert.equal(await page.locator("#recent .tag.completed").count(), 2);
+    assert.doesNotMatch(await page.locator("#recent").innerText(), /more in the revision log/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("more than eight recent changes leave a count in the same unit as the rows", async () => {
+  const route = routeRevisions((r) => {
+    const one = r.revisions.filter((x) => x.kind === "completed");
+    const more = Array.from({ length: 9 }, (_, i) => one.map((x) =>
+      ({ ...x, interval_start: `2026-10-24T0${i}:00:00Z`, revised_at: "2026-10-24T16:30:00Z" }))).flat();
+    r.revisions = r.revisions.filter((x) => x.revised_at >= "2026-10-24T16:00:00Z").concat(more)
+      .sort((a, b) => (a.revised_at < b.revised_at ? 1 : -1));
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#recent li").first().waitFor();
+    // 3 revisions and 10 auctions (50 zone rows) are 13 changes: 8 listed, 5 more.
+    assert.equal(await page.locator("#recent li:not(.more)").count(), 8);
+    assert.match(await page.locator("#recent").innerText(), /\+5 more in the revision log/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// A price first seen in the window has had less than the window to change. When the changes
+// logged were to older prices, the tile and the share card say how long after publication
+// they came, so "0% changed" is not read as "nothing is revised".
+test("changes to prices first seen before the window are named with their delay", async () => {
+  const route = routeRevisions((r) => {
+    r.revisions.filter((x) => x.kind === "changed").forEach((x) => { x.first_published_at = "2026-10-14T18:00:00Z"; });
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const tile = page.locator("#stats .stat").filter({ hasText: "First prices changed so far" });
+    assert.match(await tile.locator(".s").innerText(), / · the 3 changes logged came 10 days after publication$/);
+    assert.match(await page.locator("#share-note").innerText(),
+      /Logged in the first 3\.5 days of collection: 3 changes to prices first seen before it, 10 days after first publication\. That is longer than this window follows a price\./);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// A zone without procurement does not make a product "not measured"; a price first seen after
+// its delivery quarter-hour ended is named; and the lead finding uses only the zones it is about.
+test("the reserve callout names late first sightings and only wholly unmeasured products", async () => {
+  const route = routeSummary((s) => {
+    const mk = (zone, last7) => ({ source: "svk", data: "aFRR up", zone, daily: [],
+      last7: { n: 0, excluded: 0, published: 0, revised: 0, revisions: 0, withdrawn: 0, p50: null, p95: null, max: null, revised_share: null, lag_p50_h: null, lag_max_h: null, ...last7 } });
+    s.groups = s.groups.concat([
+      mk("SE1", { n: 96, published: 96, p50: -456.5, p95: 139.7, max: 166 }),
+      mk("SE4", {}),
+      { ...mk("SE1", {}), data: "mFRR up" }
+    ]).sort((a, b) => [a.source, a.data, a.zone].join("|") < [b.source, b.data, b.zone].join("|") ? -1 : 1);
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    assert.match(await page.locator("#lead-callout").innerText(),
+      /Svenska kraftnät aFRR \(SE1\): not always ahead of delivery\. At least 1 in 20 delivery quarter-hours was first seen after it had ended, up to 2\.8 h after\./);
+    const pending = await page.locator("#lead-pending").innerText();
+    assert.match(pending, /Svenska kraftnät mFRR/);
+    assert.doesNotMatch(pending, /Svenska kraftnät aFRR/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// A price first seen this week can still change. Once some closed days are 14 or more days
+// old, the headline share and its card follow the prices first seen on those days, whose
+// "revised" count the collector keeps current, and leave the newer prices out.
+test("the share changed later follows prices watched for 14 days or more", async () => {
+  const route = routeSummary((s) => {
+    s.collecting_since = "2026-10-01T00:00:00Z";
+    const old = (revised) => [
+      { day: "2026-10-05", n: 96, p50: 30, p95: 40, published: 96, revised, revisions: 0 },
+      { day: "2026-10-06", n: 96, p50: 30, p95: 40, published: 96, revised: 0, revisions: 0 }
+    ];
+    group(s, "entsoe", "FI").daily.unshift(...old(2));
+    group(s, "esett", "DK1").daily.unshift(...old(0));
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    assert.equal(await page.locator("#stats .stat").filter({ hasText: "First prices changed so far" }).count(), 0);
+    const tile = page.locator("#stats .stat").filter({ hasText: "First prices changed later" });
+    assert.equal(await tile.locator(".v").innerText(), "0.5%");
+    assert.equal(await tile.locator(".s").innerText(), "2 of 384 imbalance prices first seen 5–6 Oct, watched 14 days or more");
+    assert.match(await page.locator("#share-sub").innerText(),
+      /^Prices first seen 5–6 Oct, watched for 14 days or more, that were changed or withdrawn since\. Newer prices are left out because they can still change\.$/);
+    assert.match(await page.locator("#share-chart").innerText(), /ENTSO-E · FI/);
+    assert.ok((await page.locator("#findings li").allInnerTexts()).includes(
+      "Of the 384 first prices seen 5–6 Oct, each watched for 14 days or more, 0.5% (2) were changed later."));
+    assert.match(await page.locator("#share-note").innerText(), /^No change to those prices at: eSett \(DK1\)\./);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// Prices that arrive more than 48 hours late are counted, not timed, and reserve lead is
+// measured to the start of delivery, once the data file carries those fields.
+test("late prices are counted and reserve lead is measured to the start of delivery when the data has them", async () => {
+  const route = routeSummary((s) => {
+    s.groups.forEach((g) => {
+      const l = g.last7;
+      if (g.data === "imbalance") { l.late = 0; l.late_max_h = null; return; }
+      l.from_start_p50 = l.p50 + 60; l.from_start_p95 = l.p95 + 60; l.seen_after_start = 0;
+    });
+    Object.assign(group(s, "esett", "DK1").last7, { late: 2, late_max_h: 84.8 });
+    const svk = s.groups.find((g) => g.source === "svk" && g.data === "FCR-N");
+    Object.assign(svk.last7, { from_start_p50: -540, from_start_p95: 121.5, seen_after_start: 28 });
+    const fingrid = s.groups.find((g) => g.source === "fingrid" && g.data === "FCR-D up");
+    Object.assign(fingrid.last7, { late: 192, late_max_h: 124.3 });
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const late = "2 prices first appeared more than 48 hours late, at eSett (DK1), up to 85 h after the interval ended. They are counted, not timed.";
+    assert.ok((await page.locator("#findings li").allInnerTexts()).includes(late));
+    assert.ok((await page.locator("#delay-callout").innerText()).startsWith(late));
+    assert.match(await page.locator("#lead-sub").innerText(), /measured to the start of delivery\./);
+    assert.match(await page.locator("#restab-lead").innerText(), /are hours before delivery starts; a negative value means the price was first seen after that\./);
+    assert.match(await page.locator("#lead-callout").innerText(),
+      /Svenska kraftnät FCR-N \(SE3\): not always ahead of delivery\. 28 of 168 delivery quarter-hours \(17%\) were first seen after delivery had started\./);
+    assert.match(await page.locator("#lead-callout").innerText(),
+      /Fingrid FCR-D \(FI\): 192 delivery quarter-hours were first priced more than 48 hours after they ended, up to 124 h after\. They are counted, not timed\./);
+    // 9.0 h, from the start of delivery, not the 46 h that the quarter-hour ends give.
+    assert.match(await page.locator("#lead-chart").getAttribute("aria-label") ?? await page.locator("#lead-chart").innerText(), /Svenska kraftnät[^]*FCR-N[^]*9\.0 h/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// A lead smaller than five minutes is inside the measurement accuracy: the zone is level, and
+// no source is counted as first there.
+test("two sources within five minutes of each other are level, not first and second", async () => {
+  const route = routeSummary((s) => {
+    const base = s.groups.filter((g) => g.data === "imbalance");
+    const set = (source, zone, p50) => {
+      const g = structuredClone(base[0]);
+      g.source = source; g.zone = zone; g.last7.p50 = p50; g.last7.max_start = null;
+      return g;
+    };
+    s.groups = s.groups.filter((g) => g.data !== "imbalance").concat([
+      set("entsoe", "NO1", 16), set("esett", "NO1", 105),
+      set("entsoe", "NO2", 31), set("esett", "NO2", 105),
+      set("entsoe", "FI", 45.6), set("fingrid", "FI", 45.4), set("esett", "FI", 90)
+    ]).sort((a, b) => ([a.source, a.data, a.zone].join("|") < [b.source, b.data, b.zone].join("|") ? -1 : 1));
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#findings li").first().waitFor();
+    const first = (await page.locator("#findings li").allInnerTexts())[0];
+    assert.equal(first, "The imbalance price usually shows up first on ENTSO-E: in 2 of 3 price zones, about 16–31 minutes after each 15 minutes end. " +
+      "In FI the first two sources are level, within 5 minutes of each other.");
+    const tile = page.locator("#stats .stat").filter({ hasText: "First price seen after" });
+    assert.equal(await tile.locator(".s").innerText(), "Median zone · ENTSO-E first in 2 of 3 · level in 1");
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// The lead finding is about the zones where that source is first; its delay in a zone where
+// another source leads is not part of the range.
+test("the lead finding gives the range of the zones where that source is first", async () => {
+  const route = routeSummary((s) => {
+    const base = s.groups.filter((g) => g.data === "imbalance");
+    const set = (source, zone, p50) => {
+      const g = structuredClone(base[0]);
+      g.source = source; g.zone = zone; g.last7.p50 = p50; g.last7.max_start = null;
+      return g;
+    };
+    s.groups = s.groups.filter((g) => g.data !== "imbalance").concat([
+      set("entsoe", "NO1", 16), set("esett", "NO1", 105),
+      set("entsoe", "NO2", 31), set("esett", "NO2", 105),
+      set("entsoe", "FI", 46), set("fingrid", "FI", 30), set("esett", "FI", 90)
+    ]).sort((a, b) => ([a.source, a.data, a.zone].join("|") < [b.source, b.data, b.zone].join("|") ? -1 : 1));
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#findings li").first().waitFor();
+    const first = (await page.locator("#findings li").allInnerTexts())[0];
+    assert.match(first, /first on ENTSO-E: in 2 of 3 price zones, about 16–31 minutes after each 15 minutes end\./);
     assert.deepEqual(errors, []);
   } finally {
     await close();
@@ -767,8 +964,11 @@ test("data without the completion lag renders with no timing", async () => {
     const heads = (await page.locator("#reserve-table thead .th-btn").allInnerTexts()).map((h) => h.toLowerCase());
     assert.ok(heads.includes("typically after"), heads.join(" | "));
     assert.ok(!heads.includes("revised after") && !heads.includes("completed after"), heads.join(" | "));
+    // The column counts delivery quarter-hours, so the note names that unit (it said "prices").
     assert.equal(await page.locator("#restab-note").innerText(),
-      "“Revised” counts every change recorded in the first 3.5 days of collection, including changes to delivery quarter-hours from before it; “Completed later” counts the prices a later auction completed, which are not revisions.");
+      "“Revised” counts every change recorded in the first 3.5 days of collection, including changes to delivery quarter-hours from before it; “Completed later” counts the quarter-hours whose price a later auction completed, which are not revisions.");
+    assert.equal(await page.locator("#restab-lead").innerText(),
+      "“Median lead” and “95% at least” are hours before each delivery quarter-hour ends; a negative value means the price was first seen after that.");
     assert.deepEqual(errors, []);
   } finally {
     await close();
@@ -846,14 +1046,15 @@ test("data without the completion fields renders exactly as before", async () =>
   }
 });
 
-test("the corrections page lists the auction-completion correction", async () => {
-  const { page, errors, close } = await openPage(browser, `${origin}/corrections.html`);
+test("the development journal records the auction-completion finding", async () => {
+  const { page, errors, close } = await openPage(browser, `${origin}/journal.html`);
   try {
     const text = await page.locator("main").innerText();
-    assert.match(text, /9 November 2026: auction completions counted as revisions/);
-    assert.match(text, /9,060 of the 9,069/);
-    assert.match(text, /peak of 315 was 63 prices/);
-    assert.match(text, /nothing was deleted or edited/i);
+    assert.match(text, /9 November 2026: Energinet’s FCR price is a running total until the last auction/);
+    assert.match(text, /9,060 of these completions and 9 revisions/);
+    assert.match(text, /63 prices can show as 315 changes/);
+    assert.doesNotMatch(text, /period affected|what was wrong|figures were corrected/i);
+    assert.match(text, /never edited or deleted/i);
     assert.deepEqual(errors, []);
   } finally {
     await close();
