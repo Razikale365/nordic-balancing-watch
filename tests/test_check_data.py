@@ -126,6 +126,22 @@ def test_late_and_delivery_start_fields_pass(tmp_path):
     assert res.returncode == 0, res.stderr
 
 
+def test_revisions_after_delivery_accepts_a_count_or_null(tmp_path):
+    def change(s):
+        s["groups"][0]["last7"]["revisions_after_delivery"] = 4
+        s["groups"][1]["last7"]["revisions_after_delivery"] = None
+    res = run_check(make_dir(tmp_path, summary=change))
+    assert res.returncode == 0, res.stderr
+
+
+def test_bad_revisions_after_delivery_fails(tmp_path):
+    def breakit(s):
+        s["groups"][0]["last7"]["revisions_after_delivery"] = -1
+    res = run_check(make_dir(tmp_path, summary=breakit))
+    assert res.returncode != 0
+    assert "revisions_after_delivery" in res.stderr
+
+
 def test_bad_late_count_fails(tmp_path):
     def breakit(s):
         s["groups"][0]["last7"]["late"] = -1

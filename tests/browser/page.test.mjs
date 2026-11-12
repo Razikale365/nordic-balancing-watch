@@ -866,6 +866,29 @@ test("reserve counts are shown per published hour when every count is a multiple
   }
 });
 
+// "After delivery" is decided per change when the collector counts it: a mix is said as a
+// mix, and the typical lag is no longer used to decide it.
+test("revisions after delivery are counted per change when the data has them", async () => {
+  const route = routeSummary((s) => {
+    s.groups.forEach((g) => { g.last7.revisions_after_delivery = g.data === "imbalance" ? null : 0; });
+    // Fingrid FCR-D up FI: 4 revisions in the fixture (one hour), all after delivery.
+    s.groups.find((g) => g.source === "fingrid").last7.revisions_after_delivery = 4;
+    // Svenska kraftnät FCR-N SE3: 6 revisions, of which 2 after delivery, with a short median lag
+    // that the old rule would have read as "before delivery" for all of them.
+    s.groups.find((g) => g.source === "svk" && g.data === "FCR-N").last7.revisions_after_delivery = 2;
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const callout = await page.locator("#lead-callout").innerText();
+    assert.match(callout, /Fingrid FCR-D \(FI\): 4 zone-quarter-hours changed, typically 8\.7 h after first publication\. That is after delivery/);
+    assert.match(callout, /Svenska kraftnät FCR-N \(SE3\): 6 zone-quarter-hours revised, typically 9\.0 h after first publication, 2 of them after delivery\. A later auction does not explain a change after delivery, and the source gives no reason\./);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
 test("reserve counts stay in quarter-hours when one is not a multiple of four", async () => {
   const { page, errors, close } = await open();
   try {

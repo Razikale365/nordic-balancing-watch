@@ -1483,8 +1483,18 @@
      first shown as zero and filled in later looks the same as a corrected one, so the page
      states the timing and nothing about the cause. */
   function changedAfterDelivery(g) {
+    /* When the collector decides it per change, every revision of the series was after delivery. */
+    if (g.last7.revisions_after_delivery != null) {
+      return g.last7.revisions > 0 && g.last7.revisions_after_delivery === g.last7.revisions;
+    }
+    /* Older data files: the series' typical revision lag against its typical lead. */
     var lag = g.last7.lag_p50_h, lead = g.last7.p50 != null && g.last7.p50 < 0 ? -g.last7.p50 / 60 : null;
     return lag != null && lead != null && lag > lead;
+  }
+  /* Revisions after delivery across groups, in the reserve unit; null when not counted per change. */
+  function afterDeliveryCount(gs) {
+    if (!gs.length || gs.some(function (g) { return g.last7.revisions_after_delivery == null; })) return null;
+    return ru().of(sum(gs.map(function (g) { return g.last7.revisions_after_delivery; })));
   }
 
   /* A capacity price is not always seen ahead of delivery. Where the 95th percentile of a
@@ -1571,6 +1581,13 @@
       var n = fmtInt(ru().of(sum(gs.map(rePriced)))), per = perZoneCompletions(gs), rev = ru().of(zoneSum(gs));
       var head = esc(SRC_LABEL[gs[0].source]) + " " + esc(k.split("|")[1]) + " (" + esc(zoneRange(gs.map(function (g) { return g.zone; }))) + "): ";
       var after = lag != null ? ", typically " + fmtHours(lag) + " after first publication" : "";
+      var late = afterDeliveryCount(gs);
+      /* Counted per change: some revisions after delivery, some before. Both are said. */
+      if (late != null && rev && late > 0 && late < rev) {
+        return head + "<b>" + fmtInt(rev) + " " + ru().zone + "</b> revised" + after + ", <b>" + fmtInt(late) +
+          "</b> of them after delivery. A later auction does not explain a change after delivery, and the source gives no reason." +
+          (per ? " A later auction also completed " + per + "." : "");
+      }
       if (gs.every(changedAfterDelivery)) {
         return head + (rev ? "<b>" + fmtInt(rev) + " " + ru().zone + "</b> changed" + after +
           ". That is after delivery, so a later auction does not explain it; the source gives no reason for the change." : "") +
