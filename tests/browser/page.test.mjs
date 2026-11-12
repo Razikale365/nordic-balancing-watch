@@ -668,8 +668,9 @@ test("filled and unresolved changes are listed apart from revisions", async () =
     const base = { data: "FCR-D up", interval_minutes: 60, field: "price_eur_per_mw", unit: "EUR/MW",
       old: 0, new: 1.5, first_published_at: "2026-10-23T10:00:00Z", revised_at: "2026-10-24T18:50:00Z" };
     r.revisions.unshift(
-      { ...base, source: "fingrid", zone: "FI", interval_start: "2026-10-24T05:00:00Z", kind: "filled" },
-      { ...base, source: "svk", zone: "SE3", interval_start: "2026-10-24T06:00:00Z", kind: "unresolved" }
+      { ...base, source: "fingrid", zone: "FI", interval_start: "2026-10-24T05:00:00Z", kind: "filled",
+        others: [{ source: "entsoe", value: 1.5 }] },
+      { ...base, source: "svk", zone: "SE3", interval_start: "2026-10-24T06:00:00Z", kind: "unresolved", others: [] }
     );
     r.kept = { ...r.kept, other: r.kept.other + 2, other_total: r.kept.other_total + 2 };
   });
@@ -689,6 +690,14 @@ test("filled and unresolved changes are listed apart from revisions", async () =
     assert.equal(await page.locator("#rev-table tbody tr").count(), 10);
     assert.equal(await page.locator("#rev-table .tag.filled").count(), 1);
     assert.equal(await page.locator("#rev-table .tag.unresolved").count(), 1);
+    // The Basis column says why each entry is listed as it is.
+    const rows = await page.locator("#rev-table tbody tr").allInnerTexts();
+    assert.match(rows.find((t) => /Filled in late/.test(t)), /ENTSO-E had 1\.50 at the time/);
+    assert.match(rows.find((t) => /unresolved/.test(t)), /No other source had a price at the time/);
+    assert.match(rows.find((t) => /Completed by a later auction/.test(t)), /A later auction was added/);
+    // The fixture's one revision was logged by three sources: each names the other two.
+    const esett = rows.find((t) => t.includes("eSett") && t.includes("imbalance"));
+    assert.ok(esett.includes("Same change at ENTSO-E and Fingrid"), esett);
     assert.deepEqual(errors, []);
   } finally {
     await close();

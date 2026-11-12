@@ -295,6 +295,15 @@ def check_revisions(data, errors):
             errors.append(f"{where}: withdrawn entries must have new = null")
         elif kind in ("changed", "completed", "filled", "unresolved") and not is_num(r.get("new")):
             errors.append(f"{where}: {kind} entries must have a numeric new")
+        # Added 2026-11-12, optional: what each other source held for the price when a
+        # change from 0.00 was judged (empty when none held a price).
+        others = r.get("others")
+        if others is not None and not (
+            isinstance(others, list)
+            and all(isinstance(o, dict) and o.get("source") in SOURCES and is_num(o.get("value"))
+                    for o in others)
+        ):
+            errors.append(f"{where}: others must be a list of {{source, value}} from known sources")
 
 
 def check_zone(data, name, errors):

@@ -44,6 +44,26 @@
      ("filled": a value not filled in yet), and a 0.00 no other source could confirm or
      contradict ("unresolved"). Entries from older data files have only the first three kinds. */
   function isRevision(r) { return !r.kind || r.kind === "changed" || r.kind === "withdrawn"; }
+  /* Why a log entry is listed the way it is, in words, from the evidence the data carries:
+     what the other sources held when a change from 0.00 was judged (r.others), a later
+     auction for a completion, and for a revision the other sources that logged the same
+     change of the same price. Empty when the data says nothing more. */
+  function basisOf(r, all) {
+    if (r.kind === "completed") return "A later auction was added";
+    if (Array.isArray(r.others)) {
+      var held = r.others.filter(function (o) { return o && typeof o.value === "number" && isFinite(o.value); });
+      var say = function (os) { return joinList(os.map(function (o) { return (SRC_LABEL[o.source] || o.source) + " had " + fmtPrice(o.value); })); };
+      if (r.kind === "filled") return say(held.filter(function (o) { return o.value !== 0; })) + " at the time";
+      if (r.kind === "unresolved" || !held.length) return "No other source had a price at the time";
+      return say(held) + " at the time too";
+    }
+    if (!isRevision(r)) return "";
+    var same = uniq((all || []).filter(function (x) {
+      return x !== r && x.source !== r.source && isRevision(x) && x.data === r.data && x.zone === r.zone && x.field === r.field &&
+        x.interval_start === r.interval_start && x.old === r.old && x.new === r.new;
+    }).map(function (x) { return SRC_LABEL[x.source] || x.source; })).sort();
+    return same.length ? "Same change at " + joinList(same) : "";
+  }
   function dedupeJoint(revs) {
     var seen = {};
     return revs.filter(function (r) {
@@ -1729,6 +1749,8 @@
             return r.new == null ? "—" : chg(r.old, r.new, { plain: true });
           } },
         { key: "after", label: "After", csvLabel: "After first publication (h)", num: true, get: after, html: function (r) { return fmtHours(after(r)); } },
+        { key: "basis", label: "Basis", get: function (r) { return basisOf(r, state.revisions); },
+          html: function (r) { return '<span class="muted">' + esc(basisOf(r, state.revisions) || "—") + "</span>"; } },
         { key: "kind", label: "Type", get: function (r) { return KIND_LABEL[r.kind] || "Changed"; },
           html: function (r) { return '<span class="tag ' + esc(r.kind) + '">' + esc(KIND_LABEL[r.kind] || "Changed") + "</span>"; }, hidden: true },
         { key: "first", label: "First published", time: true, hidden: true, get: function (r) { return r.first_published_at; },

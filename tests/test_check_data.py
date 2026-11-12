@@ -162,6 +162,27 @@ def test_a_filled_entry_without_a_new_price_fails(tmp_path):
     assert "filled entries must have a numeric new" in res.stderr
 
 
+def test_others_on_a_judged_entry_pass(tmp_path):
+    def change(r):
+        r["revisions"][0]["kind"] = "filled"
+        r["revisions"][0]["others"] = [{"source": "entsoe", "value": 1.5}]
+        r["revisions"][1]["kind"] = "unresolved"
+        r["revisions"][1]["others"] = []
+    res = run_check(make_dir(tmp_path, revisions=change))
+    assert res.returncode == 0, res.stderr
+
+
+def test_bad_others_fail(tmp_path):
+    for bad in ("entsoe", [{"source": "nobody", "value": 1.5}], [{"source": "entsoe", "value": "1.5"}], [["entsoe", 1.5]]):
+        def breakit(r, bad=bad):
+            r["revisions"][0]["others"] = bad
+        d = tmp_path / str(abs(hash(str(bad))))
+        d.mkdir()
+        res = run_check(make_dir(d, revisions=breakit))
+        assert res.returncode != 0, bad
+        assert "others must be a list" in res.stderr
+
+
 def test_bad_late_count_fails(tmp_path):
     def breakit(s):
         s["groups"][0]["last7"]["late"] = -1
