@@ -2412,7 +2412,10 @@
   /* Both files are requested at once; a revision log that fails to load is an empty one. */
   var revisionsRequest = loadRevisions().then(function (rev) { return rev || { list: [], kept: null }; });
   fetchJson("/data/summary.json").then(function (summary) {
+    /* Every figure is placed in time from generated_at, so a file without a valid one is
+       treated like an unreadable file: the explanations stay, the figures do not appear. */
     if (!summary || summary.schema !== 1) throw new Error("unsupported data schema");
+    if (!validTime(summary.generated_at)) throw new Error("summary has no valid generated_at");
     state.summary = summary;
     return revisionsRequest.then(function (rev) {
       state.revisions = rev.list;

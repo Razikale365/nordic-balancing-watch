@@ -68,7 +68,9 @@ test("with JavaScript off, the explanations are readable and the data files are 
 for (const [name, handle] of [
   ["return an error", (r) => r.fulfill({ status: 502, contentType: "application/json", body: '{"ok":false}' })],
   ["cannot be reached", (r) => r.abort("connectionfailed")],
-  ["are not schema-1 data", (r) => r.fulfill({ status: 200, contentType: "application/json", body: '{"schema":2}' })]
+  ["are not schema-1 data", (r) => r.fulfill({ status: 200, contentType: "application/json", body: '{"schema":2}' })],
+  ["have no valid generation time", (r) => r.fulfill({ status: 200, contentType: "application/json",
+    body: '{"schema":1,"generated_at":"not a time","groups":[],"revisions":[]}' })]
 ]) {
   test(`when the data files ${name}, the explanations stay and a notice says why figures are missing`, async () => {
     const { page, errors, close } = await open({ route: { match: "**/data/*.json", handle } });
@@ -931,6 +933,44 @@ test("reserve counts stay in quarter-hours when one is not a multiple of four", 
     const heads = (await page.locator("#reserve-table thead .th-btn").allInnerTexts()).map((h) => h.toLowerCase());
     assert.ok(heads.includes("quarter-hours"), heads.join(" | "));
     assert.doesNotMatch(await page.locator("#restab-note").innerText(), /Counts are in hours/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// The lead basis is chosen once for all reserve series. When the data measures lead to the
+// start of delivery, a series without that value is left out, not mixed in on the other basis.
+test("a reserve series without the delivery-start lead is left out, not mixed in", async () => {
+  const route = routeSummary((s) => {
+    s.groups.filter((g) => g.data !== "imbalance").forEach((g) => {
+      g.last7.from_start_p50 = g.last7.p50 + 60; g.last7.from_start_p95 = g.last7.p95 + 60; g.last7.seen_after_start = 0;
+    });
+    const svk = s.groups.find((g) => g.source === "svk" && g.data === "FCR-N");
+    svk.last7.from_start_p50 = null; svk.last7.from_start_p95 = null; svk.last7.seen_after_start = null;
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    assert.match(await page.locator("#lead-sub").innerText(), /measured to the start of delivery\./);
+    assert.doesNotMatch(await page.locator("#lead-chart").innerText(), /Svenska kraftnät · FCR-N/);
+    const row = (await page.locator("#reserve-table tbody tr").allInnerTexts()).find((t) => /Svenska kraftnät\s+FCR-N/.test(t));
+    assert.match(row, /Svenska kraftnät\s+FCR-N\s+SE3\s+—\s+—/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// Log entries from data files older than the "kind" field are revisions, as they were then.
+test("log entries without a kind count as revisions", async () => {
+  const route = routeRevisions((r) => { r.revisions.forEach((x) => { if (x.kind === "changed") delete x.kind; }); });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const tile = page.locator("#stats .stat").filter({ hasText: "Prices revised" });
+    assert.equal(await tile.locator(".v").innerText(), "1");
+    assert.equal(await page.locator("#rev-table tbody tr").count(), 3);
     assert.deepEqual(errors, []);
   } finally {
     await close();
