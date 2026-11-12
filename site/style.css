@@ -630,6 +630,8 @@ td .muted, .muted { color: var(--muted); }
 }
 .tag.withdrawn { background: var(--warn-bg); color: var(--warn-ink); }
 .tag.completed { background: var(--accent-wash); color: var(--s-completed); }
+.tag.filled { background: var(--accent-wash); color: var(--s-completed); }
+.tag.unresolved { background: var(--warn-bg); color: var(--warn-ink); }
 .meter { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; }
 .meter .b { width: 32px; height: 6px; border-radius: 3px; background: var(--grid); overflow: hidden; }
 .meter .b i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }

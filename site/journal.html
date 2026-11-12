@@ -47,6 +47,11 @@
         <p>A source&rsquo;s change to a published price is called a revision. The page says
           when it happened, not why. A capacity price changed after delivery is described as a
           change that a later auction does not explain.</p>
+        <p>A change from 0.00 is checked against the other sources for the same price at that
+          moment. If another source already had a non-zero price, the log marks it as filled in
+          late, not as a revision. If no other source had any value, it is marked unresolved and
+          counted apart. Only when the other sources also showed 0.00 is it a revision of a real
+          zero.</p>
       </article>
 
       <article class="card" aria-labelledby="j7-h">

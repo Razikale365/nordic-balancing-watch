@@ -142,6 +142,26 @@ def test_bad_revisions_after_delivery_fails(tmp_path):
     assert "revisions_after_delivery" in res.stderr
 
 
+def test_filled_and_unresolved_entries_pass_with_a_numeric_new_price(tmp_path):
+    def change(r):
+        r["revisions"][0]["kind"] = "filled"
+        r["revisions"][1]["kind"] = "unresolved"
+    def counts(s):
+        s["groups"][0]["last7"]["filled"] = 4
+        s["groups"][0]["last7"]["unresolved"] = 0
+    res = run_check(make_dir(tmp_path, summary=counts, revisions=change))
+    assert res.returncode == 0, res.stderr
+
+
+def test_a_filled_entry_without_a_new_price_fails(tmp_path):
+    def breakit(r):
+        r["revisions"][0]["kind"] = "filled"
+        r["revisions"][0]["new"] = None
+    res = run_check(make_dir(tmp_path, revisions=breakit))
+    assert res.returncode != 0
+    assert "filled entries must have a numeric new" in res.stderr
+
+
 def test_bad_late_count_fails(tmp_path):
     def breakit(s):
         s["groups"][0]["last7"]["late"] = -1
