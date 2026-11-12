@@ -38,7 +38,7 @@
         <p>Fingrid showed the Finnish mFRR capacity prices for the delivery day of 17 October
           2026 as 0 EUR/MW in every hour. On 30 October it showed the procured prices and
           volumes instead. ENTSO-E had those same prices and volumes for that day from the
-          first check on 24 October, in all 192 quarter-hours. So the zeros were values not
+          first check on 24 October, for all 24 hours in both directions. So the zeros were values not
           yet filled in, not an auction result that was changed afterwards.</p>
         <p>In the collected data the two cases look the same: a first value, then a different
           one. No source says why it changes a price.</p>
@@ -54,11 +54,12 @@
 
         <h4>What was found</h4>
         <p>Hourly checks that look 48 hours ahead returned no rows for a Swedish delivery day
-          until about 02:00 UTC on that day, when the whole day arrived at once: 768 rows on
-          6 November (24 hours, two directions, four zones, in quarter-hours). The delivery
+          until about 02:00 UTC on that day, when the whole day arrived at once: 192 hourly
+          prices on 6 November (24 hours, two directions, four zones). The delivery
           day starts at 23:00 UTC, so its first three hours are first seen after they have
-          started. In the week to 8 November, 884 of 5,300 mFRR quarter-hours (17%) and 220
-          of 1,116 aFRR quarter-hours (20%) were first seen after delivery had started.</p>
+          started. In the week to 8 November, the prices of 221 of 1,325 mFRR delivery hours
+          (17%) and 55 of 279 aFRR delivery hours (20%) were first seen after delivery had
+          started.</p>
 
         <h4>How the page handles it</h4>
         <p>Lead is measured for each delivery quarter-hour and can be negative. The reserve
@@ -101,7 +102,7 @@
           about 07:45 UTC on the day before delivery. For the delivery days of 29 and 30
           October 2026, every hourly check up to and through delivery found no price, in
           either direction. The prices were first seen on 3 November at 03:30 UTC, up to 124
-          hours after the quarter-hours they belong to had ended: 192 quarter-hours per zone
+          hours after the delivery hours they belong to had ended: 48 hourly prices per zone
           and direction.</p>
 
         <h4>How the page handles it</h4>
@@ -150,10 +151,10 @@
           SE1&ndash;SE4, one joint market) as a &ldquo;Total&rdquo;: a volume-weighted average of the
           auctions cleared so far. When the later D-1 auction clears, about 18 hours after
           first publication, the Total changes. Every such change with evidence in the
-          collected log, 3,456 of 3,456, was an auction being added. In the week to 8 November
-          the log held 9,060 of these completions and 9 revisions of imbalance prices. One
-          auction in the five-zone market appears in the data once per zone, so 63 prices can
-          show as 315 changes.</p>
+          collected log was an auction being added. In the week to 8 November a later auction
+          completed 453 hourly FCR prices of the joint market, against 9 revisions of
+          imbalance prices. One auction in the five-zone market appears in the data once per
+          zone, so 63 prices can show as 315 changes.</p>
 
         <h4>How the page handles it</h4>
         <p>A Total that moves when a further auction clears is marked as completed by a later
