@@ -841,6 +841,67 @@ test("two sources within five minutes of each other are level, not first and sec
   }
 });
 
+// Reserve prices are published per hour and spread over four quarter-hour records, so when
+// every reserve count is a multiple of four the page counts hours. Any other count means a
+// source changed its resolution, and the page keeps quarter-hours (the fixture's own data).
+test("reserve counts are shown per published hour when every count is a multiple of four", async () => {
+  const route = routeSummary((s) => {
+    s.groups.filter((g) => g.data !== "imbalance").forEach((g) => {
+      for (const k of ["n", "revisions", "completions"]) if (typeof g.last7[k] === "number") g.last7[k] *= 4;
+    });
+    s.completions_7d = { zone_intervals: 4 * s.completions_7d.zone_intervals, market_intervals: 4 * s.completions_7d.market_intervals };
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const tile = page.locator("#stats .stat").filter({ hasText: "Prices revised" });
+    assert.match(await tile.locator(".s").innerText(), /plus 34 hourly reserve prices completed by a later auction/);
+    const heads = (await page.locator("#reserve-table thead .th-btn").allInnerTexts()).map((h) => h.toLowerCase());
+    assert.ok(heads.includes("hours") && !heads.includes("quarter-hours"), heads.join(" | "));
+    assert.match(await page.locator("#restab-note").innerText(), /Counts are in hours, the unit the sources publish reserve prices in\./);
+    assert.match(await page.locator("#lead-callout").innerText(), /completed by a later auction in 18 hours in each zone/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// "After delivery" is decided per change when the collector counts it: a mix is said as a
+// mix, and the typical lag is no longer used to decide it.
+test("revisions after delivery are counted per change when the data has them", async () => {
+  const route = routeSummary((s) => {
+    s.groups.forEach((g) => { g.last7.revisions_after_delivery = g.data === "imbalance" ? null : 0; });
+    // Fingrid FCR-D up FI: 4 revisions in the fixture (one hour), all after delivery.
+    s.groups.find((g) => g.source === "fingrid").last7.revisions_after_delivery = 4;
+    // Svenska kraftnät FCR-N SE3: 6 revisions, of which 2 after delivery, with a short median lag
+    // that the old rule would have read as "before delivery" for all of them.
+    s.groups.find((g) => g.source === "svk" && g.data === "FCR-N").last7.revisions_after_delivery = 2;
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const callout = await page.locator("#lead-callout").innerText();
+    assert.match(callout, /Fingrid FCR-D \(FI\): 4 zone-quarter-hours changed, typically 8\.7 h after first publication\. That is after delivery/);
+    assert.match(callout, /Svenska kraftnät FCR-N \(SE3\): 6 zone-quarter-hours revised, typically 9\.0 h after first publication, 2 of them after delivery\. A later auction does not explain a change after delivery, and the source gives no reason\./);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("reserve counts stay in quarter-hours when one is not a multiple of four", async () => {
+  const { page, errors, close } = await open();
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const heads = (await page.locator("#reserve-table thead .th-btn").allInnerTexts()).map((h) => h.toLowerCase());
+    assert.ok(heads.includes("quarter-hours"), heads.join(" | "));
+    assert.doesNotMatch(await page.locator("#restab-note").innerText(), /Counts are in hours/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
 // The lead finding is about the zones where that source is first; its delay in a zone where
 // another source leads is not part of the range.
 test("the lead finding gives the range of the zones where that source is first", async () => {
@@ -1051,7 +1112,7 @@ test("the development journal records the auction-completion finding", async () 
   try {
     const text = await page.locator("main").innerText();
     assert.match(text, /9 November 2026: Energinet’s FCR price is a running total until the last auction/);
-    assert.match(text, /9,060 of these completions and 9 revisions/);
+    assert.match(text, /completed 453 hourly FCR prices of the joint market, against 9 revisions/);
     assert.match(text, /63 prices can show as 315 changes/);
     assert.doesNotMatch(text, /period affected|what was wrong|figures were corrected/i);
     assert.match(text, /never edited or deleted/i);

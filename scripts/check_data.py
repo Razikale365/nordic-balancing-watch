@@ -86,6 +86,11 @@ def check_last7(l, where, errors):
     for k in ("late", "seen_after_start"):
         if k in l and not is_nonneg_int(l[k]):
             errors.append(f"{where}: last7.{k} must be a non-negative integer")
+    # Added 2026-11-12: reserve revisions made after delivery, decided per change (null for
+    # imbalance prices, which are only ever revised after delivery).
+    rad = l.get("revisions_after_delivery")
+    if rad is not None and not is_nonneg_int(rad):
+        errors.append(f"{where}: last7.revisions_after_delivery must be a non-negative integer or null")
     # late_max_h: the longest of those delays in hours. from_start_p50, from_start_p95:
     # minutes from the start of delivery to the first price (negative: before delivery).
     for k in ("p50", "p95", "max", "lag_p50_h", "lag_max_h",

@@ -54,13 +54,34 @@
   function perZoneCompletions(gs) {
     var byZone = {};
     gs.forEach(function (g) { byZone[g.zone] = (byZone[g.zone] || 0) + (g.last7.completions || 0); });
-    var done = Object.keys(byZone).map(function (z) { return byZone[z]; });
+    var done = Object.keys(byZone).map(function (z) { return ru().of(byZone[z]); });
     if (!sum(done)) return null;
-    var lo = Math.min.apply(null, done), hi = Math.max.apply(null, done);
-    return done.length === 1 ? "in <b>" + fmtInt(lo) + " quarter-hours</b>"
-      : lo === hi ? "in <b>" + fmtInt(lo) + " quarter-hours in each zone</b>"
-      : "in <b>" + fmtInt(lo) + "–" + fmtInt(hi) + " quarter-hours per zone</b>";
+    var lo = Math.min.apply(null, done), hi = Math.max.apply(null, done), u = ru().many;
+    return done.length === 1 ? "in <b>" + fmtInt(lo) + " " + u + "</b>"
+      : lo === hi ? "in <b>" + fmtInt(lo) + " " + u + " in each zone</b>"
+      : "in <b>" + fmtInt(lo) + "–" + fmtInt(hi) + " " + u + " per zone</b>";
   }
+  /* Every reserve capacity source publishes one price per hour; the library spreads each
+     hourly price over four quarter-hour records that are first seen, completed and revised
+     together. Reserve counts are therefore shown per hour, the unit the source published.
+     If any count is not a multiple of four, a source has changed its resolution, and the
+     page falls back to quarter-hours rather than guess. */
+  var RU_HOUR = { div: 4, one: "hour", many: "hours", zone: "zone-hours", delivery: "delivery hours", deliveryOne: "delivery hour" };
+  var RU_QUARTER = { div: 1, one: "quarter-hour", many: "quarter-hours", zone: "zone-quarter-hours", delivery: "delivery quarter-hours", deliveryOne: "delivery quarter-hour" };
+  function reserveUnit(s) {
+    var counts = [];
+    reserveGroups(s || {}).forEach(function (g) {
+      ["n", "revisions", "completions", "seen_after_start", "late"].forEach(function (k) {
+        if (g.last7 && typeof g.last7[k] === "number") counts.push(g.last7[k]);
+      });
+    });
+    var c7 = (s && s.completions_7d) || {};
+    [c7.zone_intervals, c7.market_intervals].forEach(function (x) { if (typeof x === "number") counts.push(x); });
+    var unit = counts.every(function (n) { return n % 4 === 0; }) ? RU_HOUR : RU_QUARTER;
+    unit.of = function (n) { return n == null ? n : n / unit.div; };
+    return unit;
+  }
+  function ru() { return state.ru || (state.ru = reserveUnit(state.summary)); }
   /* Real revisions may be summed across zones, under a label that says so. */
   function zoneSum(gs) { return sum(gs.map(function (g) { return g.last7.revisions || 0; })); }
   function lagOf(gs, k) { return median(gs.map(function (g) { return g.last7[k]; }).filter(function (v) { return v != null; })); }
@@ -830,8 +851,12 @@
      when a later revision reaches it, so this is the share of prices watched that long.
      Null until collection is old enough to have such a day. */
   var MATURE_DAYS = 14;
-  function matureCohort(s, groups) {
-    var cut = new Date(Date.parse(s.generated_at) - MATURE_DAYS * 86400000).toISOString().slice(0, 10);
+  function matureCohort(s) {
+    /* Every imbalance series with history counts, including one with no timed price this week. */
+    var groups = (s.groups || []).filter(function (g) { return g.data === "imbalance" && g.last7; });
+    var t = Date.parse(s.generated_at);
+    if (isNaN(t)) return null;
+    var cut = new Date(t - MATURE_DAYS * 86400000).toISOString().slice(0, 10);
     var out = { published: 0, revised: 0, from: null, to: null, series: [] };
     groups.forEach(function (g) {
       var pub = 0, rev = 0;
@@ -878,11 +903,12 @@
 
   /* Minutes from the start of delivery to the first price when the collector measures it
      (from_start_*), otherwise from the end of each quarter-hour (p50, p95). */
+  /* The basis is decided once for all reserve series (state.leadStart, set per render), so a
+     series without the value is left out rather than mixed in on the other basis. */
   function startDelay(g, q) {
-    var v = g.last7["from_start_" + q];
-    return v != null ? v : g.last7[q];
+    return state.leadStart ? g.last7["from_start_" + q] : g.last7[q];
   }
-  function leadFromStart(gs) { return gs.some(function (g) { return g.last7.from_start_p50 != null; }); }
+  function leadFromStart() { return !!state.leadStart; }
 
   /* ---------- sections ---------- */
 
@@ -1007,7 +1033,7 @@
     }
     var pub = sum(imb.map(function (g) { return g.last7.published || 0; }));
     var rev = sum(imb.map(function (g) { return g.last7.revised || 0; }));
-    var mature = matureCohort(s, imb);
+    var mature = matureCohort(s);
     if (mature) {
       /* The share that means something: prices watched long enough to have been revised. */
       tiles.push(["First prices changed later", fmtPct(mature.revised / mature.published, 1),
@@ -1050,8 +1076,10 @@
     /* When the collector separates them, completed auctions are named, not counted in the figure. */
     var c7 = s.completions_7d || {};
     var done = typeof c7.market_intervals === "number" && isFinite(c7.market_intervals) ? c7.market_intervals : null;
-    /* The collector counts completions per delivery quarter-hour, so the tile names that unit. */
-    var auction = done == null ? "" : " · plus " + fmtInt(done) + " reserve quarter-hour" + (done === 1 ? "" : "s") + " completed by a later auction";
+    /* One completion per joint-market price, in the unit the source published (see ru). */
+    if (done != null) done = ru().of(done);
+    var auction = done == null ? "" : " · plus " + fmtInt(done) + (ru().div === 4 ? " hourly reserve price" + (done === 1 ? "" : "s")
+      : " reserve quarter-hour" + (done === 1 ? "" : "s")) + " completed by a later auction";
     /* The check counts come from the same file, so a stalled collector cannot vouch for itself. */
     var stale = state.summary && isStale(state.summary);
     if (stale) {
@@ -1105,7 +1133,7 @@
       .sort(function (a, b) { return b.last7.revised_share - a.last7.revised_share; })[0];
     /* With enough history the finding is about prices watched long enough to have been
        revised; the 7-day share below is only the fallback. */
-    var mature = matureCohort(s, imb);
+    var mature = matureCohort(s);
     if (mature) {
       out.push(mature.revised
         ? "Of the " + fmtInt(mature.published) + " first prices seen " + esc(mature.days) + ", each watched for " + MATURE_DAYS +
@@ -1139,13 +1167,13 @@
       var src = Object.keys(bySrc).sort(function (a, b) {
         return sum(bySrc[b].map(rePriced)) - sum(bySrc[a].map(rePriced));
       })[0];
-      var gs = bySrc[src], n = sum(gs.map(rePriced));
+      var gs = bySrc[src], n = ru().of(sum(gs.map(rePriced)));
       var products = uniq(gs.map(function (g) { return g.data.split(" ")[0]; }));
       var leadMin = median(gs.map(function (g) { return g.last7.p50; }).filter(function (v) { return v != null && v < 0; }));
-      var per = perZoneCompletions(gs), rev = zoneSum(gs);
+      var per = perZoneCompletions(gs), rev = ru().of(zoneSum(gs));
       var lag = per ? lagOf(gs, "completion_lag_p50_h") : lagOf(gs, "lag_p50_h");
-      var note = per ? "completed by a later auction " + per + (rev ? "; " + fmtInt(rev) + " zone-quarter-hours revised" : "")
-        : fmtInt(n) + " zone-quarter-hours re-priced";
+      var note = per ? "completed by a later auction " + per + (rev ? "; " + fmtInt(rev) + " " + ru().zone + " revised" : "")
+        : fmtInt(n) + " " + ru().zone + " re-priced";
       out.push("Prices for " + term("reserve", "standby power") + " (" + esc(products.join(" and ")) + " in " +
         esc(zoneRange(gs.map(function (g) { return g.zone; }))) + ") come out" +
         (leadMin != null ? " about <b>" + fmtHours(-leadMin / 60) + " before delivery</b>" : " ahead of delivery") +
@@ -1290,7 +1318,7 @@
   function renderShare(s) {
     /* With enough history the card follows prices watched for MATURE_DAYS or more; a price
        first seen this week may still change, so the 7-day share is only the fallback. */
-    var mature = matureCohort(s, imbalanceGroups(s));
+    var mature = matureCohort(s);
     var basis = mature
       ? mature.series.map(function (x) {
         return { source: x.g.source, zone: x.g.zone, last7: { published: x.published, revised: x.revised, revised_share: x.revised / x.published, lag_p50_h: null } };
@@ -1455,8 +1483,18 @@
      first shown as zero and filled in later looks the same as a corrected one, so the page
      states the timing and nothing about the cause. */
   function changedAfterDelivery(g) {
+    /* When the collector decides it per change, every revision of the series was after delivery. */
+    if (g.last7.revisions_after_delivery != null) {
+      return g.last7.revisions > 0 && g.last7.revisions_after_delivery === g.last7.revisions;
+    }
+    /* Older data files: the series' typical revision lag against its typical lead. */
     var lag = g.last7.lag_p50_h, lead = g.last7.p50 != null && g.last7.p50 < 0 ? -g.last7.p50 / 60 : null;
     return lag != null && lead != null && lag > lead;
+  }
+  /* Revisions after delivery across groups, in the reserve unit; null when not counted per change. */
+  function afterDeliveryCount(gs) {
+    if (!gs.length || gs.some(function (g) { return g.last7.revisions_after_delivery == null; })) return null;
+    return ru().of(sum(gs.map(function (g) { return g.last7.revisions_after_delivery; })));
   }
 
   /* A capacity price is not always seen ahead of delivery. Where the 95th percentile of a
@@ -1474,14 +1512,14 @@
       var gs = bySrc[src];
       var products = uniq(gs.map(function (g) { return g.data.split(" ")[0]; })).sort();
       if (exact) {
-        var seen = sum(gs.map(function (g) { return g.last7.seen_after_start; })), all = sum(gs.map(function (g) { return g.last7.n; }));
+        var seen = ru().of(sum(gs.map(function (g) { return g.last7.seen_after_start; }))), all = ru().of(sum(gs.map(function (g) { return g.last7.n; })));
         return esc(SRC_LABEL[src]) + " " + esc(joinList(products)) + " (" + esc(zoneRange(uniq(gs.map(function (g) { return g.zone; })))) +
-          "): not always ahead of delivery. <b>" + fmtInt(seen) + " of " + fmtInt(all) + "</b> delivery quarter-hours (" + fmtPct(seen / all) +
+          "): not always ahead of delivery. <b>" + fmtInt(seen) + " of " + fmtInt(all) + "</b> " + ru().delivery + " (" + fmtPct(seen / all) +
           ") were first seen after delivery had started.";
       }
       var worst = Math.max.apply(null, gs.map(function (g) { return g.last7.max != null ? g.last7.max : g.last7.p95; }));
       return esc(SRC_LABEL[src]) + " " + esc(joinList(products)) + " (" + esc(zoneRange(uniq(gs.map(function (g) { return g.zone; })))) +
-        "): not always ahead of delivery. At least <b>1 in 20</b> delivery quarter-hours was first seen after it had ended, up to " +
+        "): not always ahead of delivery. At least <b>1 in 20</b> " + ru().delivery + " was first seen after it had ended, up to " +
         fmtHours(worst / 60) + " after.";
     });
   }
@@ -1492,11 +1530,11 @@
     var bySrc = {};
     res.forEach(function (g) { if (g.last7.late > 0) (bySrc[g.source] = bySrc[g.source] || []).push(g); });
     return Object.keys(bySrc).sort().map(function (src) {
-      var gs = bySrc[src], n = sum(gs.map(function (g) { return g.last7.late; }));
+      var gs = bySrc[src], n = ru().of(sum(gs.map(function (g) { return g.last7.late; })));
       var products = uniq(gs.map(function (g) { return g.data.split(" ")[0]; })).sort();
       var worst = Math.max.apply(null, gs.map(function (g) { return g.last7.late_max_h || 0; }));
       return esc(SRC_LABEL[src]) + " " + esc(joinList(products)) + " (" + esc(zoneRange(uniq(gs.map(function (g) { return g.zone; })))) +
-        "): <b>" + fmtInt(n) + "</b> delivery quarter-hour" + (n === 1 ? " was" : "s were") + " first priced more than 48 hours after " +
+        "): <b>" + fmtInt(n) + "</b> " + (n === 1 ? ru().deliveryOne + " was" : ru().delivery + " were") + " first priced more than 48 hours after " +
         (n === 1 ? "it" : "they") + " ended" + (worst ? ", up to " + fmtHours(worst) + " after" : "") + ". " +
         (n === 1 ? "It is" : "They are") + " counted, not timed.";
     });
@@ -1507,7 +1545,7 @@
     var measured = res.filter(function (g) { return g.last7.n > 0 && startDelay(g, "p50") != null && startDelay(g, "p50") < 0; });
     var leadSub = $("lead-sub");
     if (leadSub) {
-      leadSub.textContent = "Median over the delivery quarter-hours of the " + state.cov.label + ", measured to " +
+      leadSub.textContent = "Median over the " + ru().delivery + " of the " + state.cov.label + ", measured to " +
         (leadFromStart(res) ? "the start of delivery" : "the end of each quarter-hour") +
         ". A delivery day is usually published in one batch, so its first hours have the shortest lead.";
     }
@@ -1527,7 +1565,7 @@
         tip: '<div class="t-title">' + esc(SRC_LABEL[a.source]) + " · " + esc(a.data) + "</div>" +
           tipRow(cat(a.source), "Median lead", fmtHours(hours)) +
           tipRow(cat(a.source), "Zones", esc(zones)) +
-          tipRow(cat(a.source), "Delivery quarter-hours", fmtInt(sum(a.groups.map(function (g) { return g.last7.n; })) / a.groups.length))
+          tipRow(cat(a.source), ru().delivery.charAt(0).toUpperCase() + ru().delivery.slice(1) + " per zone", fmtInt(ru().of(sum(a.groups.map(function (g) { return g.last7.n; }))) / a.groups.length))
       };
     }).sort(function (a, b) { return b.value - a.value; });
     hbars($("lead-chart"), rows, {
@@ -1540,11 +1578,18 @@
     revised.forEach(function (g) { (bySrc[g.source + "|" + g.data.split(" ")[0]] = bySrc[g.source + "|" + g.data.split(" ")[0]] || []).push(g); });
     $("lead-callout").innerHTML = Object.keys(bySrc).map(function (k) {
       var gs = bySrc[k], lag = lagOf(gs, "lag_p50_h");
-      var n = fmtInt(sum(gs.map(rePriced))), per = perZoneCompletions(gs), rev = zoneSum(gs);
+      var n = fmtInt(ru().of(sum(gs.map(rePriced)))), per = perZoneCompletions(gs), rev = ru().of(zoneSum(gs));
       var head = esc(SRC_LABEL[gs[0].source]) + " " + esc(k.split("|")[1]) + " (" + esc(zoneRange(gs.map(function (g) { return g.zone; }))) + "): ";
       var after = lag != null ? ", typically " + fmtHours(lag) + " after first publication" : "";
+      var late = afterDeliveryCount(gs);
+      /* Counted per change: some revisions after delivery, some before. Both are said. */
+      if (late != null && rev && late > 0 && late < rev) {
+        return head + "<b>" + fmtInt(rev) + " " + ru().zone + "</b> revised" + after + ", <b>" + fmtInt(late) +
+          "</b> of them after delivery. A later auction does not explain a change after delivery, and the source gives no reason." +
+          (per ? " A later auction also completed " + per + "." : "");
+      }
       if (gs.every(changedAfterDelivery)) {
-        return head + (rev ? "<b>" + fmtInt(rev) + " zone-quarter-hours</b> changed" + after +
+        return head + (rev ? "<b>" + fmtInt(rev) + " " + ru().zone + "</b> changed" + after +
           ". That is after delivery, so a later auction does not explain it; the source gives no reason for the change." : "") +
           (per ? (rev ? " A later auction also completed " : "A later auction completed ") + per + "." : "");
       }
@@ -1552,9 +1597,9 @@
         var clag = lagOf(gs, "completion_lag_p50_h");
         return head + "completed by a later auction " + per +
           (clag != null ? ", typically " + fmtHours(clag) + " after first publication" : "") +
-          (rev ? "; " + fmtInt(rev) + " zone-quarter-hours revised" : "") + ".";
+          (rev ? "; " + fmtInt(rev) + " " + ru().zone + " revised" : "") + ".";
       }
-      return head + "re-priced in <b>" + n + " zone-quarter-hours</b>" + after + ".";
+      return head + "re-priced in <b>" + n + " " + ru().zone + "</b>" + after + ".";
     }).concat(seenAfterDelivery(res)).concat(lateAfterDelivery(res)).join("<br>");
     /* A product is "not measured yet" only when none of its zones and directions has a
        price in the window; one zone without procurement does not make the product unmeasured. */
@@ -1577,9 +1622,9 @@
     /* Data files from before the completions field keep the old column and its note. */
     $("restab-note").innerHTML = (done
       ? "&ldquo;Revised&rdquo; counts every change recorded in the <span data-window>" + esc(state.cov.label) + "</span>, " +
-        "including changes to delivery quarter-hours from before it; &ldquo;Completed later&rdquo; counts the quarter-hours whose price a later auction completed, which are not revisions."
+        "including changes to delivery " + ru().many + " from before it; &ldquo;Completed later&rdquo; counts the " + ru().many + " whose price a later auction completed, which are not revisions." + (ru().div === 4 ? " Counts are in hours, the unit the sources publish reserve prices in." : "")
       : "&ldquo;Price changes&rdquo; counts every change recorded in the <span data-window>" + esc(state.cov.label) + "</span>, " +
-        "including changes to delivery quarter-hours from before it.") +
+        "including changes to delivery " + ru().many + " from before it.") +
       (timed ? " &ldquo;Revised after&rdquo; and &ldquo;Completed after&rdquo; are median hours from first publication." : "");
     var leadNote = $("restab-lead");
     if (leadNote) {
@@ -1597,10 +1642,10 @@
         { key: "zone", label: "Zone", get: function (g) { return g.zone; }, filterSort: function (a, b) { return zoneIndex(a) - zoneIndex(b); } },
         { key: "lead", label: "Median lead", csvLabel: "Median lead (h before " + (fromStart ? "delivery starts" : "the quarter-hour ends") + ")", num: true, get: function (g) { return ahead(startDelay(g, "p50")); }, html: function (g) { return fmtHours(ahead(startDelay(g, "p50"))); } },
         { key: "lead95", label: "95% at least", csvLabel: "95% at least (h before " + (fromStart ? "delivery starts" : "the quarter-hour ends") + ")", num: true, get: function (g) { return ahead(startDelay(g, "p95")); }, html: function (g) { return fmtHours(ahead(startDelay(g, "p95"))); } },
-        { key: "n", label: "Quarter-hours", num: true, get: function (g) { return g.last7.n; }, html: function (g) { return fmtInt(g.last7.n); } },
-        { key: "revisions", label: done ? "Revised" : "Price changes", num: true, get: function (g) { return g.last7.revisions; }, html: function (g) { return fmtInt(g.last7.revisions); } },
-        done ? { key: "completions", label: "Completed later", num: true, get: function (g) { return g.last7.completions; },
-          html: function (g) { return g.last7.completions == null ? "—" : fmtInt(g.last7.completions); } } : null,
+        { key: "n", label: ru().div === 4 ? "Hours" : "Quarter-hours", num: true, get: function (g) { return ru().of(g.last7.n); }, html: function (g) { return fmtInt(ru().of(g.last7.n)); } },
+        { key: "revisions", label: done ? "Revised" : "Price changes", num: true, get: function (g) { return ru().of(g.last7.revisions); }, html: function (g) { return fmtInt(ru().of(g.last7.revisions)); } },
+        done ? { key: "completions", label: "Completed later", num: true, get: function (g) { return ru().of(g.last7.completions); },
+          html: function (g) { return g.last7.completions == null ? "—" : fmtInt(ru().of(g.last7.completions)); } } : null,
         { key: "lag", label: timed ? "Revised after" : "Typically after", csvLabel: timed ? "Revised after (h)" : "Typically after (h)", num: true, get: function (g) { return g.last7.lag_p50_h; }, html: function (g) { return fmtHours(g.last7.lag_p50_h); } },
         timed ? { key: "doneLag", label: "Completed after", csvLabel: "Completed after (h)", num: true, get: function (g) { return g.last7.completion_lag_p50_h; }, html: function (g) { return fmtHours(g.last7.completion_lag_p50_h); } } : null
       ].filter(Boolean)
@@ -1968,6 +2013,8 @@
   }
 
   function renderCharts() {
+    state.ru = reserveUnit(state.summary);
+    state.leadStart = reserveGroups(state.summary || {}).some(function (g) { return g.last7 && g.last7.from_start_p50 != null; });
     var v = view();
     renderDelay(v.s);
     renderShare(v.s);
@@ -1978,6 +2025,8 @@
   }
 
   function renderAll() {
+    state.ru = reserveUnit(state.summary);
+    state.leadStart = reserveGroups(state.summary || {}).some(function (g) { return g.last7 && g.last7.from_start_p50 != null; });
     var v = view();
     renderStatus(state.summary);
     renderCoverage(state.summary, v.s);
