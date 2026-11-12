@@ -40,7 +40,7 @@
     "keywords": ["imbalance price", "reserve capacity", "price revisions", "eSett", "ENTSO-E", "Nordic electricity market"],
     "spatialCoverage": { "@type": "Place", "name": "Denmark, Finland, Norway and Sweden" },
     "temporalCoverage": "2026-10-24/..",
-    "measurementTechnique": "A price counts as published at the first check that returns it with a value; any later change or withdrawal is logged as a revision.",
+    "measurementTechnique": "A price counts as published at the first check that returns it with a value. A later change to the euro price, or a withdrawal, is logged as a revision. A price completed by a later auction, a currency recalculation and a replaced 0.00 placeholder are counted apart, not as revisions. The sources give no reason for a revision.",
     "distribution": [
       { "@type": "DataDownload", "name": "summary.json", "encodingFormat": "application/json",
         "contentUrl": "https://nordic-balancing-watch.pages.dev/data/summary.json" },
@@ -209,8 +209,9 @@
               <div class="card-head">
                 <h3 id="share-h">Share of first prices changed later</h3>
               </div>
-              <p class="sub">Prices first seen in the <span data-window>last 7 days</span> that were changed or withdrawn
-                afterwards.</p>
+              <p class="sub" id="share-sub">Prices that were changed or withdrawn after they were first seen. A
+                price first seen recently can still change, so the share follows prices that have
+                been watched for two weeks or more once there are enough of them.</p>
               <div class="chart" id="share-chart" role="img" aria-labelledby="share-h"></div>
               <p class="note" id="share-note"></p>
               <h4 class="minor" id="size-h">What the changes were</h4>
@@ -228,9 +229,12 @@
             </div>
             <p class="sub">The numbers behind both charts. Sort, filter, reorder or hide columns, or
               download them as CSV.</p>
-            <p class="note">&ldquo;Changed later&rdquo; follows the prices first seen in the
+            <p class="note">&ldquo;Changed so far&rdquo; follows the prices first seen in the
               <span data-window>last 7 days</span>. &ldquo;Changes seen&rdquo; counts every price change
-              recorded in that time, including changes to older intervals, so it can be higher.</p>
+              recorded in that time, including changes to older intervals, so it can be higher.
+              &ldquo;Slowest timed&rdquo; is the slowest price in each series whose first appearance
+              was timed; it is not always the same interval from one series to the next, and a
+              price more than 48 hours late is not timed.</p>
             <div id="zones-table"></div>
           </article>
         </section>
@@ -245,14 +249,17 @@
               and <span class="term" data-term="mfrr">mFRR</span>). That capacity is bought in
               <span class="term" data-term="auction">auctions</span> before delivery, so its price
               appears hours or days ahead, and can change when a later auction clears. A change
-              after delivery is a correction of data already published.</p>
+              after delivery is not explained by a later auction, and the sources give no reason
+              for it.</p>
           </div>
 
           <article class="card" aria-labelledby="lead-h" data-needs-data hidden>
             <div class="card-head">
-              <h3 id="lead-h">Hours before delivery the first price appears</h3>
+              <h3 id="lead-h">How far ahead of delivery the first price appears</h3>
             </div>
-            <p class="sub">Median over the delivery quarter-hours of the <span data-window>last 7 days</span>.</p>
+            <p class="sub" id="lead-sub">Median over the delivery quarter-hours of the <span data-window>last 7 days</span>.
+              A delivery day is usually published in one batch, so its first hours have the
+              shortest lead.</p>
             <div class="chart" id="lead-chart" role="img" aria-labelledby="lead-h"></div>
             <p class="callout" id="lead-callout"></p>
             <p class="note" id="lead-pending"></p>
@@ -264,8 +271,10 @@
             </div>
             <p class="note" id="restab-note">&ldquo;Revised&rdquo; counts every change recorded in the
               <span data-window>last 7 days</span>, including changes to delivery quarter-hours from before it;
-              &ldquo;Completed later&rdquo; counts the prices a later auction completed, which are not
-              revisions.</p>
+              &ldquo;Completed later&rdquo; counts the quarter-hours whose price a later auction completed,
+              which are not revisions.</p>
+            <p class="note" id="restab-lead">&ldquo;Median lead&rdquo; and &ldquo;95% at least&rdquo; are hours
+              before delivery; a negative value means the price was first seen after it.</p>
             <div id="reserve-table"></div>
           </article>
         </section>
@@ -323,6 +332,10 @@
             <p>Values already on record when collection started, or first seen after a collector
               outage, have no reliable publication time. They are left out of the delays and of the
               share changed.</p>
+            <p>The 15-minute checks look back 48 hours. A price that first appears later than that
+              is found by a once-a-day check, so its publication time is not known to within a
+              day. It is left out of the delays too, which means the slowest prices shown are the
+              slowest that were timed.</p>
             <p id="coverage-note">Collection started on 24 October 2026. The statistics use a rolling
               7-day window, not the full history collected since then; the daily view covers up to 30
               closed UTC days.</p>
@@ -340,12 +353,14 @@
               cleared so far, and a later auction completes it about 18 hours afterwards. Those
               completions are not revisions: they are counted apart, and one auction across the
               joint market's zones counts once.</p>
-            <p>eSett first publishes the Finnish price as 0.00 and replaces it with the settled
-              price about an hour later. Once replaced, that 0.00 counts neither as publication nor
-              as a revision. A 0.00 that Fingrid also shows is a real price and stays.</p>
+            <p>For about half of the Finnish intervals, lately the first two quarter-hours of each
+              hour, eSett first publishes the price as 0.00, about an hour after the interval ends,
+              and replaces it with the settled price about two hours later. Once replaced, that
+              0.00 counts neither as publication nor as a revision. A 0.00 that Fingrid also shows
+              is a real price and stays.</p>
             <p>Collected values are never edited or deleted. A value later found to be produced by
-              a collection fault is marked and left out of the figures, and listed under
-              <a href="/corrections">corrections</a>.</p>
+              a collection fault is marked and left out of the figures, and noted in the
+              <a href="/journal">development journal</a>.</p>
           </article>
         </div>
 
@@ -362,12 +377,12 @@
               <table>
                 <thead><tr><th scope="col"><span class="th-pad">Field</span></th><th scope="col"><span class="th-pad">Meaning</span></th></tr></thead>
                 <tbody>
-                  <tr><td><code>groups[].last7.p50</code>, <code>p95</code></td><td>Minutes from the end of the interval to the first price (negative: before delivery), median and 95th percentile</td></tr>
+                  <tr><td><code>groups[].last7.p50</code>, <code>p95</code></td><td>Minutes from the end of the interval to the first price (negative: before the interval ends), median and 95th percentile</td></tr>
                   <tr><td><code>last7.n</code>, <code>excluded</code></td><td>Intervals measured, and first sightings left out (no reliable publication time)</td></tr>
                   <tr><td><code>last7.published</code>, <code>revised</code>, <code>revised_share</code></td><td>Prices first seen in the period, how many of those changed later, and the share</td></tr>
                   <tr><td><code>last7.revisions</code>, <code>withdrawn</code>, <code>lag_p50_h</code></td><td>Price changes seen in the period to any interval, including ones first seen before it (so <code>revisions</code> can exceed <code>revised</code>), of which withdrawals, and the median hours from first price to change</td></tr>
                   <tr><td><code>last7.currency_recalculations</code></td><td>Changes to the Danish-krone price alone, the euro price unchanged (not counted as revisions)</td></tr>
-                  <tr><td><code>last7.completions</code>, <code>completions_7d</code></td><td>Prices completed by a later auction, per zone-interval and per joint-market interval (not counted as revisions)</td></tr>
+                  <tr><td><code>last7.completions</code>, <code>completions_7d</code></td><td>Quarter-hours whose price was completed by a later auction, per zone and per joint market (not counted as revisions)</td></tr>
                   <tr><td><code>last7.completion_lag_p50_h</code>, <code>completion_lag_max_h</code></td><td>Median and longest hours from first price to the later auction completing it (null when none)</td></tr>
                   <tr><td><code>groups[].daily[]</code></td><td>The same figures per closed UTC day, up to 30 days, each value counted on the UTC day it was first published. Energinet publishes its FCR prices for a day close to midnight UTC, so one day can hold two days' prices and the next none</td></tr>
                   <tr><td><code>now[]</code></td><td>Latest priced interval per source and zone, with price and minutes since it ended</td></tr>
@@ -413,7 +428,7 @@
             <div id="g-p95"><dt>95th percentile</dt>
               <dd>95 out of 100 intervals were first seen by this time; only 1 in 20 took longer. A picture of a bad day.</dd></div>
             <div id="g-revision"><dt>Revision</dt>
-              <dd>Any change to a price after it was first published.</dd></div>
+              <dd>A change to a published price in euros, or a published price that disappears. A price completed by a later auction, a currency recalculation and a replaced 0.00 placeholder are not revisions. The sources give no reason for a revision.</dd></div>
             <div id="g-withdrawn"><dt>Withdrawal</dt>
               <dd>A price that was published and later disappeared from the source.</dd></div>
             <div id="g-reserve"><dt>Reserve capacity</dt>
@@ -508,7 +523,7 @@
         <p>Not affiliated with any of these organisations. Price data belongs to its providers.</p>
         <p>Built on the open-source <a href="https://pypi.org/project/nordic-balancing/" rel="noopener">nordic-balancing</a>
           library (<a href="https://github.com/Razikale365/nordic-balancing" rel="noopener">GitHub</a>)<span id="collector-link"></span>.</p>
-        <p><a href="/corrections">Corrections</a>: every change to published figures, and why.</p>
+        <p><a href="/journal">Development journal</a>: edge cases and API quirks found in the sources&rsquo; data, and how the page handles them.</p>
       </div>
     </div>
   </footer>

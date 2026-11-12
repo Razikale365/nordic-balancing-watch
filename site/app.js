@@ -33,7 +33,7 @@
   if (["UTC", "Europe/Stockholm"].indexOf(state.tz) < 0) state.tz = "UTC";
   function inZones(z) { return !state.zones || state.zones.indexOf(z) >= 0; }
   function term(key, text) { return '<span class="term" data-term="' + key + '">' + text + "</span>"; }
-  /* An entry a later auction completed is not a correction: the first price was a
+  /* An entry a later auction completed is not a revision: the first price was a
      provisional total. It is shown, but never counted as a revision. Energinet's FCR
      markets are joint across several zones, so one auction can appear once per zone;
      wherever a count is shown it counts once. */
@@ -756,6 +756,21 @@
     return by;
   }
 
+  /* Delays are accurate to about one check, and the sources are checked at different moments
+     of each quarter-hour. A source counts as first in a zone only when it leads the next
+     one by LEVEL_MIN minutes or more; a smaller gap is level, not a lead. */
+  var LEVEL_MIN = 5;
+  function clearlyFirst(imb, fastest) {
+    var out = {};
+    Object.keys(fastest).forEach(function (z) {
+      var f = fastest[z];
+      var next = imb.filter(function (g) { return g.zone === z && g !== f && g.last7.p50 != null; })
+        .map(function (g) { return g.last7.p50; });
+      out[z] = !next.length || Math.min.apply(null, next) - f.last7.p50 >= LEVEL_MIN;
+    });
+    return out;
+  }
+
   /* "7–10 h", from slowest-interval delays in minutes. */
   function hoursSpan(lo, hi) {
     var a = Math.round(lo / 60), b = Math.round(hi / 60);
@@ -795,6 +810,79 @@
     best.at = dateTime(best.start) + " " + tzName(best.start);
     return best;
   }
+
+  /* Imbalance revisions logged in the window to prices first seen before it. The share of
+     the window's first prices changed so far cannot include them, so the page says how long
+     after publication they came. Null when there are none. */
+  function lateRevisions(s, revs) {
+    var from = Date.parse(s.generated_at) - 7 * 86400000;
+    var lags = (revs || []).filter(function (r) {
+      return r.data === "imbalance" && !isCompletion(r) && inZones(r.zone) && validTime(r.first_published_at) &&
+        validTime(r.revised_at) && Date.parse(r.first_published_at) < from;
+    }).map(function (r) { return (Date.parse(r.revised_at) - Date.parse(r.first_published_at)) / 86400000; });
+    if (!lags.length) return null;
+    var lo = Math.round(Math.min.apply(null, lags)), hi = Math.round(Math.max.apply(null, lags));
+    return { n: lags.length, span: (lo === hi ? lo : lo + "–" + hi) + (hi === 1 ? " day" : " days") };
+  }
+
+  /* Imbalance prices old enough to have been revised: those first seen on closed UTC days
+     that ended at least MATURE_DAYS ago. The collector keeps a day's "revised" count current
+     when a later revision reaches it, so this is the share of prices watched that long.
+     Null until collection is old enough to have such a day. */
+  var MATURE_DAYS = 14;
+  function matureCohort(s, groups) {
+    var cut = new Date(Date.parse(s.generated_at) - MATURE_DAYS * 86400000).toISOString().slice(0, 10);
+    var out = { published: 0, revised: 0, from: null, to: null, series: [] };
+    groups.forEach(function (g) {
+      var pub = 0, rev = 0;
+      (g.daily || []).forEach(function (d) {
+        if (typeof d.day !== "string" || !(d.day < cut) || !(d.published > 0)) return;
+        pub += d.published; rev += d.revised || 0;
+        if (!out.from || d.day < out.from) out.from = d.day;
+        if (!out.to || d.day > out.to) out.to = d.day;
+      });
+      if (pub) out.series.push({ g: g, published: pub, revised: rev });
+      out.published += pub; out.revised += rev;
+    });
+    if (!out.published) return null;
+    out.days = dayRange(out.from, out.to);
+    return out;
+  }
+  /* "24–27 Oct" or "28 Oct – 3 Nov", from two YYYY-MM-DD days. */
+  function dayRange(a, b) {
+    var f = function (day, month) {
+      return new Date(day + "T00:00:00Z").toLocaleDateString("en-GB", month ? { day: "numeric", month: "short", timeZone: "UTC" } : { day: "numeric", timeZone: "UTC" });
+    };
+    if (a === b) return f(a, true);
+    return a.slice(0, 7) === b.slice(0, 7) ? f(a, false) + "–" + f(b, true) : f(a, true) + " – " + f(b, true);
+  }
+  /* Prices that first appeared more than 48 hours after their interval ended. They are seen
+     only by the daily check, so they are counted, not timed. `known` is false for data
+     files from before the collector counted them. */
+  function lateSummary(imb) {
+    var known = imb.some(function (g) { return g.last7.late != null; });
+    var gs = imb.filter(function (g) { return g.last7.late > 0; });
+    var bySrc = {};
+    gs.forEach(function (g) { (bySrc[g.source] = bySrc[g.source] || []).push(g.zone); });
+    var worst = Math.max.apply(null, gs.map(function (g) { return g.last7.late_max_h || 0; }).concat([0]));
+    return {
+      known: known, n: sum(gs.map(function (g) { return g.last7.late; })), worst: worst,
+      names: Object.keys(bySrc).sort().map(function (k) { return SRC_LABEL[k] + " (" + zoneRange(bySrc[k]) + ")"; })
+    };
+  }
+  function lateSentence(late) {
+    return "<b>" + fmtInt(late.n) + "</b> price" + (late.n === 1 ? "" : "s") + " first appeared more than 48 hours late, at " +
+      esc(joinList(late.names)) + (late.worst ? ", up to " + fmtHours(late.worst) + " after the interval ended" : "") +
+      ". " + (late.n === 1 ? "It is" : "They are") + " counted, not timed.";
+  }
+
+  /* Minutes from the start of delivery to the first price when the collector measures it
+     (from_start_*), otherwise from the end of each quarter-hour (p50, p95). */
+  function startDelay(g, q) {
+    var v = g.last7["from_start_" + q];
+    return v != null ? v : g.last7[q];
+  }
+  function leadFromStart(gs) { return gs.some(function (g) { return g.last7.from_start_p50 != null; }); }
 
   /* ---------- sections ---------- */
 
@@ -900,15 +988,17 @@
     imb.forEach(function (g) { (byCat[cat(g.source)] = byCat[cat(g.source)] || []).push(g); });
     var fastest = fastestByZone(imb), zones = Object.keys(fastest);
     if (zones.length) {
-      var wins = {};
-      zones.forEach(function (z) { var c = cat(fastest[z].source); wins[c] = (wins[c] || 0) + 1; });
+      var wins = {}, clear = clearlyFirst(imb, fastest);
+      zones.forEach(function (z) { if (!clear[z]) return; var c = cat(fastest[z].source); wins[c] = (wins[c] || 0) + 1; });
       var lead = Object.keys(wins).sort(function (a, b) { return wins[b] - wins[a]; })[0];
-      /* Which source is first, zone by zone, as one segmented bar. */
+      var level = zones.filter(function (z) { return !clear[z]; }).length;
+      /* Which source is first, zone by zone, as one segmented bar; level zones are grey. */
       var bar = '<span class="tile-bar" aria-hidden="true">' + CAT_ORDER.filter(function (c) { return wins[c]; }).map(function (c) {
         return '<i style="flex:' + wins[c] + ";background:" + catColor(c) + '" title="' + esc(CAT_LABEL[c]) + " first in " + wins[c] + '"></i>';
-      }).join("") + "</span>";
+      }).join("") + (level ? '<i style="flex:' + level + ';background:var(--muted)" title="Level in ' + level + '"></i>' : "") + "</span>";
       tiles.push(["First price seen after", fmtMin(median(zones.map(function (z) { return fastest[z].last7.p50; }))),
-        "Median zone · " + CAT_LABEL[lead] + " first in " + wins[lead] + " of " + zones.length, bar]);
+        "Median zone · " + (lead ? CAT_LABEL[lead] + " first in " + wins[lead] + " of " + zones.length : "no source clearly first") +
+        (lead && level ? " · level in " + level : ""), bar]);
     }
     var es = (byCat.esett || []).map(function (g) { return g.last7.p50; }).filter(function (v) { return v != null; });
     if (es.length) {
@@ -917,17 +1007,28 @@
     }
     var pub = sum(imb.map(function (g) { return g.last7.published || 0; }));
     var rev = sum(imb.map(function (g) { return g.last7.revised || 0; }));
-    if (pub) {
-      tiles.push(["First prices changed later", fmtPct(rev / pub, 1), fmtInt(rev) + " of " + fmtInt(pub) + " imbalance prices",
+    var mature = matureCohort(s, imb);
+    if (mature) {
+      /* The share that means something: prices watched long enough to have been revised. */
+      tiles.push(["First prices changed later", fmtPct(mature.revised / mature.published, 1),
+        fmtInt(mature.revised) + " of " + fmtInt(mature.published) + " imbalance prices first seen " + mature.days + ", watched " + MATURE_DAYS + " days or more",
+        '<span class="tile-meter" aria-hidden="true"><i style="width:' + Math.max(mature.revised ? 2 : 0, Math.round(mature.revised / mature.published * 100)) + '%"></i></span>']);
+    } else if (pub) {
+      /* A price first seen in the window has had less than the window to change. When the
+         changes logged came later than that, the tile says so next to the share. */
+      var late = lateRevisions(s, state.revisions);
+      tiles.push(["First prices changed so far", fmtPct(rev / pub, 1), fmtInt(rev) + " of " + fmtInt(pub) + " imbalance prices" +
+        (late ? " · the " + fmtInt(late.n) + (late.n === 1 ? " change" : " changes") + " logged came " + late.span + " after publication" : ""),
         '<span class="tile-meter" aria-hidden="true"><i style="width:' + Math.max(rev ? 2 : 0, Math.round(rev / pub * 100)) + '%"></i></span>']);
     }
     var revisions = sum((s.groups || []).map(function (g) { return (g.last7 && g.last7.revisions) || 0; }));
-    /* The same correction can be logged once per source; when the log is known to hold every
-       imbalance revision of the window, the tile counts each corrected price once and says
-       how many records that rests on. Logs without kept counts keep the record count. */
+    /* The same revision can be logged once per source; when the log is known to hold every
+       imbalance revision of the window, the tile counts each revised price once and says
+       how many records that rests on. Logs without kept counts keep the record count.
+       No source says why it changed a price, so the tile says "revised", not "corrected". */
     var kp = state.kept, head = ["Price changes logged", revisions, ""];
     if (kp && typeof kp.imbalance === "number" && kp.imbalance === kp.imbalance_total) {
-      var seen = {}, srcs = {}, logged = 0, corrected = 0;
+      var seen = {}, srcs = {}, logged = 0, revisedOnce = 0;
       state.revisions.filter(function (r) { return inZones(r.zone); }).forEach(function (r) {
         if (isCompletion(r)) return;
         logged++;
@@ -937,11 +1038,11 @@
           if (seen[key]) return;
           seen[key] = true;
         }
-        corrected++;
+        revisedOnce++;
       });
       var m = Object.keys(srcs).length;
-      head = ["Prices corrected", corrected,
-        logged !== corrected ? fmtInt(logged) + " changes logged across " + m + " source" + (m === 1 ? "" : "s") + " · " : ""];
+      head = ["Prices revised", revisedOnce,
+        logged !== revisedOnce ? fmtInt(logged) + " changes logged across " + m + " source" + (m === 1 ? "" : "s") + " · " : ""];
     }
     var p = s.polls_24h || {}, total = (p.ok || 0) + (p.skipped || 0) + (p.error || 0);
     var health = total ? (p.ok / total >= 0.98 ? "up" : p.ok / total >= 0.9 ? "amber" : "down") : "";
@@ -949,7 +1050,8 @@
     /* When the collector separates them, completed auctions are named, not counted in the figure. */
     var c7 = s.completions_7d || {};
     var done = typeof c7.market_intervals === "number" && isFinite(c7.market_intervals) ? c7.market_intervals : null;
-    var auction = done == null ? "" : " · plus " + fmtInt(done) + " reserve price" + (done === 1 ? "" : "s") + " completed by a later auction";
+    /* The collector counts completions per delivery quarter-hour, so the tile names that unit. */
+    var auction = done == null ? "" : " · plus " + fmtInt(done) + " reserve quarter-hour" + (done === 1 ? "" : "s") + " completed by a later auction";
     /* The check counts come from the same file, so a stalled collector cannot vouch for itself. */
     var stale = state.summary && isStale(state.summary);
     if (stale) {
@@ -969,15 +1071,18 @@
   function renderFindings(s, revs) {
     var imb = imbalanceGroups(s), out = [];
     var fastest = fastestByZone(imb), zones = Object.keys(fastest);
-    var wins = {};
-    zones.forEach(function (z) { var c = cat(fastest[z].source); wins[c] = (wins[c] || 0) + 1; });
+    var wins = {}, clear = clearlyFirst(imb, fastest);
+    zones.forEach(function (z) { if (!clear[z]) return; var c = cat(fastest[z].source); wins[c] = (wins[c] || 0) + 1; });
     var lead = Object.keys(wins).sort(function (a, b) { return wins[b] - wins[a]; })[0];
     if (lead) {
-      var leadP50 = imb.filter(function (g) { return cat(g.source) === lead; }).map(function (g) { return g.last7.p50; });
+      /* Only the zones where this category is clearly first: its delay elsewhere is not a lead. */
+      var leadP50 = zones.filter(function (z) { return clear[z] && cat(fastest[z].source) === lead; }).map(function (z) { return fastest[z].last7.p50; });
       var lo = Math.round(Math.min.apply(null, leadP50)), hi = Math.round(Math.max.apply(null, leadP50));
+      var level = zones.filter(function (z) { return !clear[z]; });
       out.push("The " + term("imbalance", "imbalance price") + " usually shows up first on <b>" + esc(CAT_LABEL[lead]) +
         "</b>: in <b>" + wins[lead] + " of " + zones.length + "</b> " + term("zone", "price zones") + ", about <b>" +
-        (lo === hi ? lo : lo + "–" + hi) + " minutes</b> after each 15 minutes end.");
+        (lo === hi ? lo : lo + "–" + hi) + " minutes</b> after each 15 minutes end." +
+        (level.length ? " In " + esc(zoneRange(level)) + " the first two sources are level, within " + LEVEL_MIN + " minutes of each other." : ""));
     }
     var gaps = imb.filter(function (g) { return g.source === "esett" && fastest[g.zone] && fastest[g.zone].source !== "esett"; })
       .map(function (g) { return g.last7.p50 - fastest[g.zone].last7.p50; });
@@ -989,11 +1094,25 @@
     if (shared) {
       out.push("One 15-minute price, the one starting <b>" + esc(shared.at) + "</b>, first appeared <b>" + esc(shared.span) +
         "</b> after it ended at " + (shared.every ? "<b>every source</b>: " : "") + esc(joinList(shared.names)) +
-        ", so the delay began before publication rather than at one publisher.");
+        ", so the delay began before publication rather than at one publisher." +
+        (shared.every || lateSummary(imb).known ? "" : " A source missing from that list was not necessarily faster: a price more than 48 hours late is not timed."));
+    }
+    var lateImb = lateSummary(imb);
+    if (lateImb.n) {
+      out.push(lateSentence(lateImb));
     }
     var top = imb.filter(function (g) { return g.last7.published >= 20 && g.last7.revised_share > 0; })
       .sort(function (a, b) { return b.last7.revised_share - a.last7.revised_share; })[0];
-    if (top) {
+    /* With enough history the finding is about prices watched long enough to have been
+       revised; the 7-day share below is only the fallback. */
+    var mature = matureCohort(s, imb);
+    if (mature) {
+      out.push(mature.revised
+        ? "Of the " + fmtInt(mature.published) + " first prices seen " + esc(mature.days) + ", each watched for " + MATURE_DAYS +
+          " days or more, <b>" + fmtPct(mature.revised / mature.published, 1) + "</b> (" + fmtInt(mature.revised) + ") were changed later."
+        : "None of the " + fmtInt(mature.published) + " first prices seen " + esc(mature.days) + ", each watched for " + MATURE_DAYS +
+          " days or more, has been changed since.");
+    } else if (top) {
       var clean = CAT_ORDER.filter(function (c) {
         var gs = imb.filter(function (g) { return cat(g.source) === c; });
         return gs.length && gs.every(function (g) { return !g.last7.revisions; });
@@ -1002,8 +1121,7 @@
       var share = top.last7.published ? top.last7.revised / top.last7.published : top.last7.revised_share;
       var plain = "About " + simpleFraction(share);
       out.push("<b>" + plain + "</b> (" + fmtPct(share) + ", " + fmtInt(top.last7.revised) + " of " + fmtInt(top.last7.published) + ") of the first prices " + esc(SRC_LABEL[top.source]) + " showed for <b>" +
-        esc(country(top.zone)) + (country(top.zone) !== top.zone ? " (" + esc(top.zone) + ")" : "") + "</b> were changed later" +
-        (top.last7.lag_p50_h != null ? ", typically <b>" + fmtHours(top.last7.lag_p50_h) + "</b> after" : "") + "." +
+        esc(country(top.zone)) + (country(top.zone) !== top.zone ? " (" + esc(top.zone) + ")" : "") + "</b> have been changed so far." +
         (clean.length ? " " + esc(clean.join(" and ")) + " did not change any." : ""));
     }
     var zeros = revs.filter(function (r) { return r.source === "esett" && r.kind === "changed" && r.old === 0; });
@@ -1110,15 +1228,20 @@
     var since = Date.parse(s.generated_at) - 3 * 3600000;
     var recent = revs.filter(function (r) { return inZones(r.zone) && Date.parse(r.revised_at) >= since; })
       .sort(function (a, b) { return a.revised_at < b.revised_at ? 1 : -1; });
-    var shown = recent.slice(0, 8);
+    /* One row per change: a completion in a joint market is one event, listed once with its zones. */
+    var jointKey = function (r) { return [r.source, r.data, r.interval_start, r.revised_at, r.old, r.new].join("|"); };
+    var zonesOf = {};
+    recent.forEach(function (r) { if (isCompletion(r)) (zonesOf[jointKey(r)] = zonesOf[jointKey(r)] || []).push(r.zone); });
+    var events = dedupeJoint(recent);
+    var shown = events.slice(0, 8);
     var hm = function (iso) { return fmtTime(iso, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }); };
     $("recent").innerHTML = shown.length ? shown.map(function (r) {
-      return '<li><span class="t">' + esc(hm(r.revised_at)) + "</span><span>" + srcCell(r.source) + " · " + esc(r.zone) +
+      return '<li><span class="t">' + esc(hm(r.revised_at)) + "</span><span>" + srcCell(r.source) + " · " + esc(isCompletion(r) ? zoneRange(zonesOf[jointKey(r)]) : r.zone) +
         ' <span class="muted">' + esc(r.data === "imbalance" ? "for " + hm(r.interval_start) : r.data) + "</span>" +
         (isCompletion(r) ? ' <span class="tag completed">' + esc(CAT_LABEL.completed) + "</span>" : "") + "</span>" +
         '<span class="v"><span class="muted">' + fmtPrice(r.old) + " →</span> " +
         (r.new == null ? '<span class="tag withdrawn">Withdrawn</span>' : "<b>" + fmtPrice(r.new) + "</b> " + chg(r.old, r.new, { plain: true })) + "</span></li>";
-    }).join("") + (recent.length > shown.length ? '<li class="more">+' + dedupeJoint(recent.slice(shown.length)).length + " more in the revision log</li>" : "")
+    }).join("") + (events.length > shown.length ? '<li class="more">+' + (events.length - shown.length) + " more in the revision log</li>" : "")
       : '<li class="more">No price changed in the last 3 hours' + (state.zones ? " in the selected zones" : "") + ".</li>";
   }
 
@@ -1147,13 +1270,14 @@
     /* When several sources saw their slowest price for the same interval, it is not one series' outlier. */
     var shared = slow && sharedSlowest(imb);
     var together = shared && shared.groups.indexOf(slow) >= 0 ? shared : null;
-    $("delay-callout").innerHTML = together
+    var lateImb = lateSummary(imb);
+    $("delay-callout").innerHTML = (lateImb.n ? lateSentence(lateImb) + " " : "") + (together
       ? "Outlier: one 15-minute price, the one starting " + esc(together.at) + ", took <b>" + esc(together.span) +
         "</b> to appear at " + esc(joinList(together.names)) + " alike, against 95th percentiles of " + p95Range(together.groups) + "."
       : slow
       ? "Outlier: one " + esc(SRC_LABEL[slow.source]) + " " + esc(slow.zone) + " price took <b>" + fmtDur(slow.last7.max) +
         "</b>, against a 95th percentile of " + fmtMin(slow.last7.p95) + "."
-      : "";
+      : "");
   }
 
   function p95Range(gs) {
@@ -1164,7 +1288,21 @@
   }
 
   function renderShare(s) {
-    var imb = imbalanceGroups(s).filter(function (g) { return g.last7.published >= 10; });
+    /* With enough history the card follows prices watched for MATURE_DAYS or more; a price
+       first seen this week may still change, so the 7-day share is only the fallback. */
+    var mature = matureCohort(s, imbalanceGroups(s));
+    var basis = mature
+      ? mature.series.map(function (x) {
+        return { source: x.g.source, zone: x.g.zone, last7: { published: x.published, revised: x.revised, revised_share: x.revised / x.published, lag_p50_h: null } };
+      })
+      : imbalanceGroups(s);
+    var sub = $("share-sub");
+    if (sub) {
+      sub.textContent = mature
+        ? "Prices first seen " + mature.days + ", watched for " + MATURE_DAYS + " days or more, that were changed or withdrawn since. Newer prices are left out because they can still change."
+        : "Prices first seen in the " + state.cov.label + " that were changed or withdrawn since. They have had less than " + MATURE_DAYS + " days to change, so this share can still rise.";
+    }
+    var imb = basis.filter(function (g) { return g.last7.published >= 10; });
     var hit = imb.filter(function (g) { return g.last7.revised_share > 0; })
       .sort(function (a, b) { return b.last7.revised_share - a.last7.revised_share; });
     hbars($("share-chart"), hit.map(function (g) {
@@ -1181,14 +1319,20 @@
     }), {
       tick: function (t) { return Math.round(t * 100) + "%"; },
       step: function (m) { return m > 0.5 ? 0.25 : m > 0.2 ? 0.1 : 0.05; },
-      empty: "No first price was changed in the " + state.cov.label + "."
+      empty: mature ? "None of the prices first seen " + mature.days + " has been changed since."
+        : "No price first seen in the " + state.cov.label + " has been changed so far."
     });
     var zero = imb.filter(function (g) { return !g.last7.revised; });
     var bySrc = {};
     zero.forEach(function (g) { (bySrc[g.source] = bySrc[g.source] || []).push(g.zone); });
-    $("share-note").textContent = Object.keys(bySrc).length
-      ? "No later change: " + Object.keys(bySrc).map(function (k) { return SRC_LABEL[k] + " (" + zoneRange(bySrc[k]) + ")"; }).join("; ") + "."
-      : "";
+    /* "No change so far" is about the window's own first prices. Changes to older prices are
+       named with their delay, so the two statements cannot be read as a contradiction. */
+    var late = lateRevisions(s, state.revisions);
+    $("share-note").textContent = (Object.keys(bySrc).length
+      ? (mature ? "No change to those prices at: " : "No change so far to the prices first seen in this window: ") +
+        Object.keys(bySrc).map(function (k) { return SRC_LABEL[k] + " (" + zoneRange(bySrc[k]) + ")"; }).join("; ") + "."
+      : "") + (late ? " Logged in the " + state.cov.label + ": " + (late.n === 1 ? "1 change to a price" : fmtInt(late.n) + " changes to prices") +
+        " first seen before it, " + late.span + " after first publication." + (mature ? "" : " That is longer than this window follows a price.") : "");
   }
 
   function renderSize(revs) {
@@ -1204,16 +1348,16 @@
     });
     var rows = Object.keys(by).map(function (k) {
       var src = k.split("|")[0], zone = k.split("|")[1], b = by[k];
-      var corrected = b.n - b.zero - b.withdrawn;
+      var nonZero = b.n - b.zero - b.withdrawn;
       return {
         label: SRC_LABEL[src] + " · " + zone, value: b.n, color: catColor(cat(src)),
         text: b.n + (b.zero === b.n ? ", all from 0.00" : b.zero ? ", " + b.zero + " from 0.00" : ""),
         aria: SRC_LABEL[src] + " " + zone + ": " + b.n + " changes, " + b.zero + " replaced 0.00",
         tip: '<div class="t-title">' + esc(SRC_LABEL[src]) + " · " + esc(zone) + "</div>" +
           tipRow(cat(src), "Replaced a 0.00 price", fmtInt(b.zero)) +
-          tipRow(cat(src), "Changed a non-zero price", fmtInt(corrected)) +
+          tipRow(cat(src), "Changed a non-zero price", fmtInt(nonZero)) +
           (b.withdrawn ? tipRow(cat(src), "Withdrawn", fmtInt(b.withdrawn)) : "") +
-          (b.sizes.length ? '<div class="t-sub">Median correction ' + fmtPrice(median(b.sizes)) + " EUR/MWh</div>" : "")
+          (b.sizes.length ? '<div class="t-sub">Median change ' + fmtPrice(median(b.sizes)) + " EUR/MWh</div>" : "")
       };
     }).sort(function (a, b) { return b.value - a.value; });
     hbars($("size-chart"), rows, {
@@ -1293,9 +1437,9 @@
         { key: "source", label: "Source", get: function (g) { return SRC_LABEL[g.source]; }, html: function (g) { return srcCell(g.source); } },
         { key: "p50", label: "Median delay", csvLabel: "Median delay (min)", num: true, get: function (g) { return g.last7.p50; }, html: function (g) { return '<span class="speed">' + speed(g) + fmtMin(g.last7.p50) + "</span>"; } },
         { key: "p95", label: "95% within", csvLabel: "95% within (min)", num: true, get: function (g) { return g.last7.p95; }, html: function (g) { return fmtMin(g.last7.p95); } },
-        { key: "max", label: "Slowest", csvLabel: "Slowest (min)", num: true, get: function (g) { return g.last7.max; }, html: function (g) { return fmtDur(g.last7.max); } },
+        { key: "max", label: "Slowest timed", csvLabel: "Slowest timed (min)", num: true, get: function (g) { return g.last7.max; }, html: function (g) { return fmtDur(g.last7.max); } },
         { key: "n", label: "Intervals", num: true, get: function (g) { return g.last7.n; }, html: function (g) { return fmtInt(g.last7.n); } },
-        { key: "share", label: "Changed later", csvLabel: "Changed later (share)", num: true, get: function (g) { return g.last7.revised_share; },
+        { key: "share", label: "Changed so far", csvLabel: "Changed so far (share)", num: true, get: function (g) { return g.last7.revised_share; },
           html: function (g) {
             var v = g.last7.revised_share;
             return v == null ? "—" : '<span class="meter ' + shareTone(v) + '">' + fmtPct(v, 1) + '<span class="b"><i style="width:' + Math.max(v > 0 ? 4 : 0, Math.round(v * 100)) + '%"></i></span></span>';
@@ -1307,22 +1451,73 @@
   }
 
   /* A capacity price changed later than it typically comes out ahead of delivery was changed
-     after delivery, so no later auction explains it: the operator corrected published data. */
+     after delivery, so no later auction explains it. The source gives no reason, and a value
+     first shown as zero and filled in later looks the same as a corrected one, so the page
+     states the timing and nothing about the cause. */
   function changedAfterDelivery(g) {
     var lag = g.last7.lag_p50_h, lead = g.last7.p50 != null && g.last7.p50 < 0 ? -g.last7.p50 / 60 : null;
     return lag != null && lead != null && lag > lead;
   }
 
+  /* A capacity price is not always seen ahead of delivery. Where the 95th percentile of a
+     series is after the end of the delivery quarter-hour, at least 1 in 20 of its prices was
+     first seen only after delivery, and the callout says so, per source. */
+  function seenAfterDelivery(res) {
+    var bySrc = {};
+    /* When the collector counts them, the exact share first seen after delivery had started. */
+    var exact = res.some(function (g) { return g.last7.seen_after_start != null; });
+    res.forEach(function (g) {
+      var hit = exact ? g.last7.seen_after_start > 0 : g.last7.p95 != null && g.last7.p95 > 0;
+      if (g.last7.n > 0 && hit) (bySrc[g.source] = bySrc[g.source] || []).push(g);
+    });
+    return Object.keys(bySrc).map(function (src) {
+      var gs = bySrc[src];
+      var products = uniq(gs.map(function (g) { return g.data.split(" ")[0]; })).sort();
+      if (exact) {
+        var seen = sum(gs.map(function (g) { return g.last7.seen_after_start; })), all = sum(gs.map(function (g) { return g.last7.n; }));
+        return esc(SRC_LABEL[src]) + " " + esc(joinList(products)) + " (" + esc(zoneRange(uniq(gs.map(function (g) { return g.zone; })))) +
+          "): not always ahead of delivery. <b>" + fmtInt(seen) + " of " + fmtInt(all) + "</b> delivery quarter-hours (" + fmtPct(seen / all) +
+          ") were first seen after delivery had started.";
+      }
+      var worst = Math.max.apply(null, gs.map(function (g) { return g.last7.max != null ? g.last7.max : g.last7.p95; }));
+      return esc(SRC_LABEL[src]) + " " + esc(joinList(products)) + " (" + esc(zoneRange(uniq(gs.map(function (g) { return g.zone; })))) +
+        "): not always ahead of delivery. At least <b>1 in 20</b> delivery quarter-hours was first seen after it had ended, up to " +
+        fmtHours(worst / 60) + " after.";
+    });
+  }
+
+  /* Capacity prices first seen more than 48 hours after delivery: counted by the collector,
+     left out of the lead times, and named here per source. */
+  function lateAfterDelivery(res) {
+    var bySrc = {};
+    res.forEach(function (g) { if (g.last7.late > 0) (bySrc[g.source] = bySrc[g.source] || []).push(g); });
+    return Object.keys(bySrc).sort().map(function (src) {
+      var gs = bySrc[src], n = sum(gs.map(function (g) { return g.last7.late; }));
+      var products = uniq(gs.map(function (g) { return g.data.split(" ")[0]; })).sort();
+      var worst = Math.max.apply(null, gs.map(function (g) { return g.last7.late_max_h || 0; }));
+      return esc(SRC_LABEL[src]) + " " + esc(joinList(products)) + " (" + esc(zoneRange(uniq(gs.map(function (g) { return g.zone; })))) +
+        "): <b>" + fmtInt(n) + "</b> delivery quarter-hour" + (n === 1 ? " was" : "s were") + " first priced more than 48 hours after " +
+        (n === 1 ? "it" : "they") + " ended" + (worst ? ", up to " + fmtHours(worst) + " after" : "") + ". " +
+        (n === 1 ? "It is" : "They are") + " counted, not timed.";
+    });
+  }
+
   function renderLead(s) {
     var res = reserveGroups(s);
-    var measured = res.filter(function (g) { return g.last7.n > 0 && g.last7.p50 != null && g.last7.p50 < 0; });
+    var measured = res.filter(function (g) { return g.last7.n > 0 && startDelay(g, "p50") != null && startDelay(g, "p50") < 0; });
+    var leadSub = $("lead-sub");
+    if (leadSub) {
+      leadSub.textContent = "Median over the delivery quarter-hours of the " + state.cov.label + ", measured to " +
+        (leadFromStart(res) ? "the start of delivery" : "the end of each quarter-hour") +
+        ". A delivery day is usually published in one batch, so its first hours have the shortest lead.";
+    }
     var agg = {};
     measured.forEach(function (g) {
       var k = g.source + "|" + g.data;
       (agg[k] = agg[k] || { source: g.source, data: g.data, groups: [] }).groups.push(g);
     });
     var rows = Object.keys(agg).map(function (k) {
-      var a = agg[k], hours = -median(a.groups.map(function (g) { return g.last7.p50; })) / 60;
+      var a = agg[k], hours = -median(a.groups.map(function (g) { return startDelay(g, "p50"); })) / 60;
       var zones = zoneRange(a.groups.map(function (g) { return g.zone; }));
       return {
         label: SRC_LABEL[a.source] + " · " + a.data, value: hours, color: catColor(cat(a.source)),
@@ -1350,7 +1545,7 @@
       var after = lag != null ? ", typically " + fmtHours(lag) + " after first publication" : "";
       if (gs.every(changedAfterDelivery)) {
         return head + (rev ? "<b>" + fmtInt(rev) + " zone-quarter-hours</b> changed" + after +
-          ". That is after delivery, so they are corrections of published data, not a later auction." : "") +
+          ". That is after delivery, so a later auction does not explain it; the source gives no reason for the change." : "") +
           (per ? (rev ? " A later auction also completed " : "A later auction completed ") + per + "." : "");
       }
       if (per) {
@@ -1360,12 +1555,16 @@
           (rev ? "; " + fmtInt(rev) + " zone-quarter-hours revised" : "") + ".";
       }
       return head + "re-priced in <b>" + n + " zone-quarter-hours</b>" + after + ".";
-    }).join("<br>");
+    }).concat(seenAfterDelivery(res)).concat(lateAfterDelivery(res)).join("<br>");
+    /* A product is "not measured yet" only when none of its zones and directions has a
+       price in the window; one zone without procurement does not make the product unmeasured. */
     var pending = {};
     res.forEach(function (g) {
-      if (!(g.last7.n > 0) && !(rePriced(g) > 0)) pending[SRC_LABEL[g.source] + " " + g.data.split(" ")[0]] = true;
+      var k = SRC_LABEL[g.source] + " " + g.data.split(" ")[0];
+      var seen = g.last7.n > 0 || rePriced(g) > 0;
+      pending[k] = (k in pending ? pending[k] : true) && !seen;
     });
-    var names = Object.keys(pending).sort();
+    var names = Object.keys(pending).filter(function (k) { return pending[k]; }).sort();
     $("lead-pending").textContent = names.length ? "Not measured yet in the " + state.cov.label + ": " + names.join(", ") + "." : "";
   }
 
@@ -1374,13 +1573,19 @@
     var ahead = function (m) { return m == null ? null : -m / 60; };
     var done = rows.some(function (g) { return g.last7.completions != null; });
     var timed = done && rows.some(function (g) { return "completion_lag_p50_h" in g.last7; });
+    var fromStart = leadFromStart(rows);
     /* Data files from before the completions field keep the old column and its note. */
     $("restab-note").innerHTML = (done
       ? "&ldquo;Revised&rdquo; counts every change recorded in the <span data-window>" + esc(state.cov.label) + "</span>, " +
-        "including changes to delivery quarter-hours from before it; &ldquo;Completed later&rdquo; counts the prices a later auction completed, which are not revisions."
+        "including changes to delivery quarter-hours from before it; &ldquo;Completed later&rdquo; counts the quarter-hours whose price a later auction completed, which are not revisions."
       : "&ldquo;Price changes&rdquo; counts every change recorded in the <span data-window>" + esc(state.cov.label) + "</span>, " +
         "including changes to delivery quarter-hours from before it.") +
       (timed ? " &ldquo;Revised after&rdquo; and &ldquo;Completed after&rdquo; are median hours from first publication." : "");
+    var leadNote = $("restab-lead");
+    if (leadNote) {
+      leadNote.textContent = "“Median lead” and “95% at least” are hours before " +
+        (fromStart ? "delivery starts" : "each delivery quarter-hour ends") + "; a negative value means the price was first seen after that.";
+    }
     if (state.tables.reserves) { state.tables.reserves.setRows(rows); return; }
     state.tables.reserves = new DataTable($("reserve-table"), {
       id: "reserves", rows: rows, page: 100, csvName: "nordic-reserve-publication.csv",
@@ -1390,8 +1595,8 @@
         { key: "source", label: "Source", get: function (g) { return SRC_LABEL[g.source]; }, html: function (g) { return srcCell(g.source); } },
         { key: "product", label: "Product", get: function (g) { return g.data; } },
         { key: "zone", label: "Zone", get: function (g) { return g.zone; }, filterSort: function (a, b) { return zoneIndex(a) - zoneIndex(b); } },
-        { key: "lead", label: "Median lead", csvLabel: "Median lead (h before delivery)", num: true, get: function (g) { return ahead(g.last7.p50); }, html: function (g) { return fmtHours(ahead(g.last7.p50)); } },
-        { key: "lead95", label: "95% at least", csvLabel: "95% at least (h before delivery)", num: true, get: function (g) { return ahead(g.last7.p95); }, html: function (g) { return fmtHours(ahead(g.last7.p95)); } },
+        { key: "lead", label: "Median lead", csvLabel: "Median lead (h before " + (fromStart ? "delivery starts" : "the quarter-hour ends") + ")", num: true, get: function (g) { return ahead(startDelay(g, "p50")); }, html: function (g) { return fmtHours(ahead(startDelay(g, "p50"))); } },
+        { key: "lead95", label: "95% at least", csvLabel: "95% at least (h before " + (fromStart ? "delivery starts" : "the quarter-hour ends") + ")", num: true, get: function (g) { return ahead(startDelay(g, "p95")); }, html: function (g) { return fmtHours(ahead(startDelay(g, "p95"))); } },
         { key: "n", label: "Quarter-hours", num: true, get: function (g) { return g.last7.n; }, html: function (g) { return fmtInt(g.last7.n); } },
         { key: "revisions", label: done ? "Revised" : "Price changes", num: true, get: function (g) { return g.last7.revisions; }, html: function (g) { return fmtInt(g.last7.revisions); } },
         done ? { key: "completions", label: "Completed later", num: true, get: function (g) { return g.last7.completions; },
@@ -1403,7 +1608,7 @@
   }
 
   /* The log lists revisions; prices a later auction completed join only when asked for,
-     and then the Type column shows itself so they are not mistaken for corrections. */
+     and then the Type column shows itself so they are not mistaken for revisions. */
   function doneToggle(t, revs) {
     var done = revs.filter(isCompletion), label = t.doneLabel;
     if (!done.length) {
@@ -1430,8 +1635,9 @@
       t.el.insertBefore(label, t.el.firstChild);
     }
     var m = done.length;
-    label.lastChild.textContent = "Also list prices completed by a later auction (" +
-      fmtInt(dedupeJoint(done).length) + ", shown as " + fmtInt(m) + " zone row" + (m === 1 ? "" : "s") + ")";
+    var entries = dedupeJoint(done).length;
+    label.lastChild.textContent = "Also list completions by a later auction (" +
+      fmtInt(entries) + " log " + (entries === 1 ? "entry" : "entries") + ", shown as " + fmtInt(m) + " zone row" + (m === 1 ? "" : "s") + ")";
   }
 
   function renderRevisionTable(revs) {

@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Development journal · Nordic Balancing Watch</title>
+  <meta name="description" content="Dated notes from building Nordic Balancing Watch: edge cases, API quirks and problems found in the sources' price data, and how the page handles each.">
+  <link rel="canonical" href="https://nordic-balancing-watch.pages.dev/journal">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script>try { var t = JSON.parse(localStorage.getItem("nbw.theme")); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}</script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap">
+      <a class="brand" href="/" aria-label="Nordic Balancing Watch, home">
+        <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--accent)"/><path d="M7 21h4l3-9 4 13 3-8h4" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Nordic Balancing Watch</span>
+      </a>
+    </div>
+  </header>
+  <main class="wrap" id="main">
+    <section class="section" aria-labelledby="jr-h">
+      <div class="section-head">
+        <span class="kicker">Development journal</span>
+        <h2 id="jr-h">Edge cases and API quirks in the sources&rsquo; data</h2>
+        <p>Nordic Balancing Watch is in development; collection started on 24 October 2026.
+          These notes record, by date, the edge cases, API quirks and problems met in the
+          sources&rsquo; data, and how the page handles each. Collected values are never edited
+          or deleted. A value found to come from a collection fault is marked with the reason
+          and left out of the figures.</p>
+      </div>
+
+      <article class="card" aria-labelledby="j4-h">
+        <h3 id="j4-h">11 November 2026: a value filled in late looks like a corrected one</h3>
+
+        <h4>What was found</h4>
+        <p>Fingrid showed the Finnish mFRR capacity prices for the delivery day of 17 October
+          2026 as 0 EUR/MW in every hour. On 30 October it showed the procured prices and
+          volumes instead. ENTSO-E had those same prices and volumes for that day from the
+          first check on 24 October, in all 192 quarter-hours. So the zeros were values not
+          yet filled in, not an auction result that was changed afterwards.</p>
+        <p>In the collected data the two cases look the same: a first value, then a different
+          one. No source says why it changes a price.</p>
+
+        <h4>How the page handles it</h4>
+        <p>A source&rsquo;s change to a published price is called a revision. The page says
+          when it happened, not why. A capacity price changed after delivery is described as a
+          change that a later auction does not explain.</p>
+      </article>
+
+      <article class="card" aria-labelledby="j7-h">
+        <h3 id="j7-h">11 November 2026: Svenska kraftnät&rsquo;s capacity prices appear after the delivery day has started</h3>
+
+        <h4>What was found</h4>
+        <p>Hourly checks that look 48 hours ahead returned no rows for a Swedish delivery day
+          until about 02:00 UTC on that day, when the whole day arrived at once: 768 rows on
+          6 November (24 hours, two directions, four zones, in quarter-hours). The delivery
+          day starts at 23:00 UTC, so its first three hours are first seen after they have
+          started. In the week to 8 November, 884 of 5,300 mFRR quarter-hours (17%) and 220
+          of 1,116 aFRR quarter-hours (20%) were first seen after delivery had started.</p>
+
+        <h4>How the page handles it</h4>
+        <p>Lead is measured for each delivery quarter-hour and can be negative. The reserve
+          table shows it, and the page says where a product is not always seen ahead of
+          delivery.</p>
+      </article>
+
+      <article class="card" aria-labelledby="j6-h">
+        <h3 id="j6-h">11 November 2026: a price can arrive days late at every source</h3>
+
+        <h4>What was found</h4>
+        <p>Three quarter-hours in the first two weeks were late at every source at once:</p>
+        <ul>
+          <li>The one starting 30 October, 14:30 UTC was still missing 48 hours after it ended
+            and was first seen at most 85 hours after, in all 12 zones at eSett and ENTSO-E,
+            at Energinet and at Fingrid.</li>
+          <li>The one starting 3 November, 15:45 UTC first appeared 17 to 22 hours after it
+            ended at Energinet, ENTSO-E, Fingrid and eSett, and after 41 hours for Denmark at
+            eSett.</li>
+          <li>The one starting 6 November, 15:30 UTC took 44 to 45 hours at Energinet, ENTSO-E,
+            Fingrid and eSett&rsquo;s Norwegian and Swedish zones. eSett&rsquo;s prices for
+            Denmark and Finland were still missing 48 hours after it ended and were first seen
+            at most 84 hours after.</li>
+        </ul>
+        <p>Every source was late together, so the delay began before publication rather than
+          at one publisher.</p>
+
+        <h4>How the page handles it</h4>
+        <p>The 15-minute checks look back 48 hours. A price later than that is found by a
+          once-a-day check, so its publication time is not known to within a day. It is
+          counted as late and left out of the timings. &ldquo;Slowest timed&rdquo; is therefore
+          the slowest price that was timed, not always the slowest there was.</p>
+      </article>
+
+      <article class="card" aria-labelledby="j9-h">
+        <h3 id="j9-h">11 November 2026: Energinet&rsquo;s Danish mFRR capacity prices for two days appeared days late</h3>
+
+        <h4>What was found</h4>
+        <p>Energinet&rsquo;s mFRR capacity prices for DK1 and DK2 are normally first seen at
+          about 07:45 UTC on the day before delivery. For the delivery days of 29 and 30
+          October 2026, every hourly check up to and through delivery found no price, in
+          either direction. The prices were first seen on 3 November at 03:30 UTC, up to 124
+          hours after the quarter-hours they belong to had ended: 192 quarter-hours per zone
+          and direction.</p>
+
+        <h4>How the page handles it</h4>
+        <p>A capacity price first seen more than 48 hours after delivery is counted as late
+          and left out of the lead times, so a late day does not pass as a short lead.</p>
+      </article>
+
+      <article class="card" aria-labelledby="j8-h">
+        <h3 id="j8-h">11 November 2026: a revision can come two hours or ten days after the price</h3>
+
+        <h4>What was found</h4>
+        <p>In the first 16 days, sources changed 22 published imbalance prices. A Finnish price
+          of 25 October changed about two hours after it appeared, and one of 2 November
+          within a day. Seventeen Norwegian prices for 25 October, 22:00 to 22:45 UTC (NO1 to
+          NO5) changed three days later, at eSett and ENTSO-E together. Two Finnish prices of
+          29 October changed after six days. Later, prices of 1 November for Finland and SE1
+          changed after ten. Of the 9,509 first prices seen from 24 to 27 October, counting
+          each source, 37 (0.4%) had been changed two weeks later.</p>
+
+        <h4>How the page handles it</h4>
+        <p>A price first seen this week can still change, so the share of first prices
+          changed later follows prices that have been watched for 14 days or more. The log
+          lists every change as it is seen.</p>
+      </article>
+
+      <article class="card" aria-labelledby="j5-h">
+        <h3 id="j5-h">11 November 2026: eSett&rsquo;s Finnish 0.00 stand-in follows the clock</h3>
+
+        <h4>What was found</h4>
+        <p>From 25 October to 7 November, eSett&rsquo;s 0.00 stand-in for Finland was only ever
+          seen for quarter-hours starting on the hour (325 of 336) or at a quarter past (237 of
+          336), never for the other two (0 of 671). It appears about an hour after the
+          interval ends and is replaced by the settled price about two hours later. The other
+          quarter-hours get the settled price directly, 75 to 105 minutes after they end.</p>
+
+        <h4>How the page handles it</h4>
+        <p>As before: a 0.00 that eSett later replaces, and that Fingrid never showed, counts
+          neither as a first price nor as a revision.</p>
+      </article>
+
+      <article class="card" aria-labelledby="j3-h">
+        <h3 id="j3-h">9 November 2026: Energinet&rsquo;s FCR price is a running total until the last auction</h3>
+
+        <h4>What was found</h4>
+        <p>Energinet publishes its FCR prices (FCR-N and FCR-D up and down, in DK2 and
+          SE1&ndash;SE4, one joint market) as a &ldquo;Total&rdquo;: a volume-weighted average of the
+          auctions cleared so far. When the later D-1 auction clears, about 18 hours after
+          first publication, the Total changes. Every such change with evidence in the
+          collected log, 3,456 of 3,456, was an auction being added. In the week to 8 November
+          the log held 9,060 of these completions and 9 revisions of imbalance prices. One
+          auction in the five-zone market appears in the data once per zone, so 63 prices can
+          show as 315 changes.</p>
+
+        <h4>How the page handles it</h4>
+        <p>A Total that moves when a further auction clears is marked as completed by a later
+          auction, using the provider&rsquo;s own auction rows. Completions are shown apart from
+          revisions, and one auction across the joint market&rsquo;s zones counts once. Where the
+          stored provider rows cannot show which auctions changed, a change still counts as a
+          revision.</p>
+      </article>
+
+      <article class="card" aria-labelledby="j2-h">
+        <h3 id="j2-h">9 November 2026: one revision can appear on several sources</h3>
+
+        <h4>What was found</h4>
+        <p>The same revised price is often published by more than one source: 3 revised
+          Finnish prices were in the log as 9 records.</p>
+
+        <h4>How the page handles it</h4>
+        <p>The headline counts each revised price once where several sources publish the same
+          revision, and says how many changes were logged across how many sources.</p>
+      </article>
+
+      <article class="card" aria-labelledby="j1-h">
+        <h3 id="j1-h">28 October 2026: first findings about what the sources publish</h3>
+        <p class="sub">From the first days of collection, 24 to 28 October 2026.</p>
+
+        <h4>1. Most changes to a published row do not move a price</h4>
+        <p>Sources often change other fields of a row they have published, such as satisfied
+          demand, a direction or a capacity volume.</p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th scope="col"><span class="th-pad">Series</span></th><th scope="col"><span class="th-pad">Stored changes</span></th><th scope="col"><span class="th-pad">Moved no price</span></th></tr></thead>
+            <tbody>
+              <tr><td>eSett imbalance, all zones</td><td>5,215</td><td>5,041</td></tr>
+              <tr><td>Energi Data Service imbalance, DK1 and DK2</td><td>1,092</td><td>824</td></tr>
+              <tr><td>Energi Data Service FCR-D</td><td>3,868</td><td>528</td></tr>
+              <tr><td>Energi Data Service FCR-N</td><td>1,936</td><td>36</td></tr>
+              <tr><td>Fingrid imbalance</td><td>15</td><td>14</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>A change counts as a revision only if a euro price differs from its previous
+          value.</p>
+
+        <h4>2. A missing value is not always a withdrawal</h4>
+        <p>No source withdrew a published value in this period. Two things looked like
+          withdrawals:</p>
+        <ul>
+          <li>On 26 October 2026 at 10:30 UTC, ENTSO-E answered one request without any NO2 rows.
+            The 189 values came back at the next check.</li>
+          <li>eSett is queried in 31-day pieces. A query that started a few seconds past the
+            quarter hour lost the interval on the boundary between two pieces: 12 values a day,
+            one per zone, which came back the next day, 48 in all. nordic-balancing 1.0.0rc2
+            puts the boundaries on the quarter hour.</li>
+        </ul>
+        <p>These entries are marked. A value counts as withdrawn only when two successful
+          checks in a row miss it, and a marked entry must have its interval come back, so a
+          real withdrawal stays visible.</p>
+
+        <h4>3. eSett&rsquo;s Danish placeholder is told apart by its spot difference</h4>
+        <p>Shortly after each interval, eSett publishes a provisional row for DK1 and DK2 with
+          every price at 0.00 before the real price. The row can carry an up or down
+          direction, so the direction does not identify it. Its non-zero spot difference
+          (<code>imblSpotDifferencePrice</code>) does. A real settled price of 0.00 has a spot
+          difference of 0: there were three (DK1, 25 October 2026, 01:15 to 01:45 UTC, when
+          the spot price was also 0.00).</p>
+        <p>nordic-balancing 1.0.0rc3 recognises the placeholder this way, checked against every
+          Danish row from 2025 to October 2026 and against Energi Data Service. The collector
+          has used it since 28 October 2026, 16:17 UTC. The 132 placeholder rows collected
+          before that, and 2 rows re-read at the switch, are marked.</p>
+
+        <h4>4. Energi Data Service recalculates its krone price once a day</h4>
+        <p>Energi Data Service recalculates its Danish-krone imbalance price from the euro price
+          once a day, around 16:30 UTC, moving it by a few øre while the euro price stays the
+          same: 268 times in this period (125 DK1, 143 DK2). No euro imbalance price from
+          Energi Data Service was revised. These are reported separately as currency
+          recalculations, not as revisions.</p>
+
+        <h4>5. eSett first publishes Finnish prices as 0.00</h4>
+        <p>For about four in ten Finnish intervals, eSett first publishes the imbalance price as
+          0.00, about an hour after the interval ends, and replaces it with the settled price
+          one to two hours later. Fingrid and ENTSO-E have the settled price from the start.
+          Sweden, Norway and Denmark show no such rows. Up to 28 October 2026, 19:11 UTC, 176
+          of the 178 Finnish eSett changes were these replacements.</p>
+        <p>These 0.00 rows are marked as they are replaced, every 15 minutes, and count neither
+          as a first price nor as a revision. A 0.00 is marked only when eSett later replaced
+          it and Fingrid never showed 0.00 for that interval, so a real price of 0.00 (76 in
+          the collected data, matched by Fingrid and ENTSO-E) stays.</p>
+        <p>The other two Finnish changes are revisions seen on more than one source: 25 October
+          2026, 00:00 UTC, from &minus;15.77 to &minus;2.35 (first in Fingrid, then ENTSO-E, then
+          eSett), and 16 October 2026, 02:45 UTC, from &minus;79.60 to &minus;1.00 (eSett and
+          ENTSO-E).</p>
+
+        <h4>How the collector handles these</h4>
+        <ul>
+          <li>A value counts as withdrawn only when two successful checks in a row miss it.</li>
+          <li>A zone missing from an otherwise successful answer is never read as withdrawals.</li>
+          <li>Every check records the version of nordic-balancing that read it.</li>
+          <li>For DK1, DK2 and Finnish eSett rows, every distinct row the source sent is kept, so
+            a reading can be checked against the original.</li>
+          <li>Automated tests cover each case above.</li>
+        </ul>
+      </article>
+      <p style="margin-top:20px"><a class="btn" href="/" style="text-decoration:none">Back to the figures</a></p>
+    </section>
+  </main>
+</body>
+</html>

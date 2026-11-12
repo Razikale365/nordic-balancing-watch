@@ -108,6 +108,43 @@ def test_bad_completion_lag_fails(tmp_path):
     assert "completion_lag_p50_h" in res.stderr
 
 
+def test_late_and_delivery_start_fields_pass(tmp_path):
+    def change(s):
+        last7 = s["groups"][0]["last7"]
+        last7["late"] = 3
+        last7["late_max_h"] = 84.8
+        last7["from_start_p50"] = -540.0
+        last7["from_start_p95"] = 121.5
+        last7["seen_after_start"] = 112
+        other = s["groups"][1]["last7"]
+        other["late"] = 0
+        other["late_max_h"] = None
+        other["from_start_p50"] = None
+        other["from_start_p95"] = None
+        other["seen_after_start"] = 0
+    res = run_check(make_dir(tmp_path, summary=change))
+    assert res.returncode == 0, res.stderr
+
+
+def test_bad_late_count_fails(tmp_path):
+    def breakit(s):
+        s["groups"][0]["last7"]["late"] = -1
+    res = run_check(make_dir(tmp_path, summary=breakit))
+    assert res.returncode != 0
+    assert "last7.late must be a non-negative integer" in res.stderr
+
+
+def test_bad_delivery_start_fields_fail(tmp_path):
+    def breakit(s):
+        s["groups"][0]["last7"]["from_start_p50"] = "-540"
+        s["groups"][0]["last7"]["seen_after_start"] = 1.5
+        s["groups"][0]["last7"]["late_max_h"] = "84.8"
+    res = run_check(make_dir(tmp_path, summary=breakit))
+    assert res.returncode != 0
+    for name in ("from_start_p50", "seen_after_start", "late_max_h"):
+        assert name in res.stderr
+
+
 def test_the_new_completion_fields_pass(tmp_path):
     def change(s):
         s["groups"][0]["last7"]["completions"] = 12

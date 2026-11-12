@@ -81,8 +81,16 @@ def check_last7(l, where, errors):
     # Optional: the start of the 15-minute interval behind `max`.
     if l.get("max_start") is not None and not is_ts(l["max_start"]):
         errors.append(f"{where}: last7.max_start must be an ISO timestamp ending in Z or null")
+    # Added 2026-11-11: prices first seen more than 48 hours late (counted, not timed), and
+    # for reserve products the quarter-hours first seen after delivery had started.
+    for k in ("late", "seen_after_start"):
+        if k in l and not is_nonneg_int(l[k]):
+            errors.append(f"{where}: last7.{k} must be a non-negative integer")
+    # late_max_h: the longest of those delays in hours. from_start_p50, from_start_p95:
+    # minutes from the start of delivery to the first price (negative: before delivery).
     for k in ("p50", "p95", "max", "lag_p50_h", "lag_max_h",
-              "completion_lag_p50_h", "completion_lag_max_h"):
+              "completion_lag_p50_h", "completion_lag_max_h",
+              "late_max_h", "from_start_p50", "from_start_p95"):
         if l.get(k) is not None and not is_num(l.get(k)):
             errors.append(f"{where}: last7.{k} must be a number or null")
     rs = l.get("revised_share")
