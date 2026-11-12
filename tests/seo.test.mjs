@@ -220,6 +220,12 @@ test("both pages use the favicon file", () => {
   for (const html of [index, notFound, journal]) assert.match(html, /<link rel="icon" href="\/favicon\.svg" type="image\/svg\+xml">/);
 });
 
+test("the old corrections address redirects permanently to the development journal", () => {
+  const rules = read("_redirects").split("\n").filter((l) => l.trim() && !l.startsWith("#"))
+    .map((l) => l.trim().split(/\s+/));
+  assert.deepEqual(rules, [["/corrections", "/journal", "301"], ["/corrections.html", "/journal", "301"]]);
+});
+
 test("the development journal is indexed, canonical and linked from the home page", () => {
   assert.doesNotMatch(journal, /name="robots"/);
   assert.match(journal, new RegExp(`<link rel="canonical" href="${SITE}journal">`));

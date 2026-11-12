@@ -16,7 +16,8 @@
     esett: "eSett", entsoe: "ENTSO-E", energidataservice: "Energinet",
     fingrid: "Fingrid", svk: "Svenska kraftnät"
   };
-  var KIND_LABEL = { changed: "Changed", withdrawn: "Withdrawn", completed: "Completed by a later auction" };
+  var KIND_LABEL = { changed: "Changed", withdrawn: "Withdrawn", completed: "Completed by a later auction",
+    filled: "Filled in late", unresolved: "From 0.00, unresolved" };
   var COUNTRY = { DK: "Denmark", FI: "Finland", NO: "Norway", SE: "Sweden" };
   var ZONES = ["DK1", "DK2", "FI", "NO1", "NO2", "NO3", "NO4", "NO5", "SE1", "SE2", "SE3", "SE4"];
 
@@ -38,6 +39,11 @@
      markets are joint across several zones, so one auction can appear once per zone;
      wherever a count is shown it counts once. */
   function isCompletion(r) { return r.kind === "completed"; }
+  /* A revision is a change to a published price, or its withdrawal. Not revisions: a price a
+     later auction completed, a 0.00 that another source already had the real price for
+     ("filled": a value not filled in yet), and a 0.00 no other source could confirm or
+     contradict ("unresolved"). Entries from older data files have only the first three kinds. */
+  function isRevision(r) { return !r.kind || r.kind === "changed" || r.kind === "withdrawn"; }
   function dedupeJoint(revs) {
     var seen = {};
     return revs.filter(function (r) {
@@ -838,7 +844,7 @@
   function lateRevisions(s, revs) {
     var from = Date.parse(s.generated_at) - 7 * 86400000;
     var lags = (revs || []).filter(function (r) {
-      return r.data === "imbalance" && !isCompletion(r) && inZones(r.zone) && validTime(r.first_published_at) &&
+      return r.data === "imbalance" && isRevision(r) && inZones(r.zone) && validTime(r.first_published_at) &&
         validTime(r.revised_at) && Date.parse(r.first_published_at) < from;
     }).map(function (r) { return (Date.parse(r.revised_at) - Date.parse(r.first_published_at)) / 86400000; });
     if (!lags.length) return null;
@@ -1056,7 +1062,7 @@
     if (kp && typeof kp.imbalance === "number" && kp.imbalance === kp.imbalance_total) {
       var seen = {}, srcs = {}, logged = 0, revisedOnce = 0;
       state.revisions.filter(function (r) { return inZones(r.zone); }).forEach(function (r) {
-        if (isCompletion(r)) return;
+        if (!isRevision(r)) return;
         logged++;
         srcs[r.source] = true;
         if (r.data === "imbalance") {
@@ -1266,7 +1272,7 @@
     $("recent").innerHTML = shown.length ? shown.map(function (r) {
       return '<li><span class="t">' + esc(hm(r.revised_at)) + "</span><span>" + srcCell(r.source) + " · " + esc(isCompletion(r) ? zoneRange(zonesOf[jointKey(r)]) : r.zone) +
         ' <span class="muted">' + esc(r.data === "imbalance" ? "for " + hm(r.interval_start) : r.data) + "</span>" +
-        (isCompletion(r) ? ' <span class="tag completed">' + esc(CAT_LABEL.completed) + "</span>" : "") + "</span>" +
+        (isRevision(r) ? "" : ' <span class="tag ' + esc(r.kind) + '">' + esc(KIND_LABEL[r.kind] || r.kind) + "</span>") + "</span>" +
         '<span class="v"><span class="muted">' + fmtPrice(r.old) + " →</span> " +
         (r.new == null ? '<span class="tag withdrawn">Withdrawn</span>' : "<b>" + fmtPrice(r.new) + "</b> " + chg(r.old, r.new, { plain: true })) + "</span></li>";
     }).join("") + (events.length > shown.length ? '<li class="more">+' + (events.length - shown.length) + " more in the revision log</li>" : "")
@@ -1366,7 +1372,7 @@
   function renderSize(revs) {
     var by = {};
     revs.forEach(function (r) {
-      if (r.data !== "imbalance" || isCompletion(r)) return;
+      if (r.data !== "imbalance" || !isRevision(r)) return;
       var k = r.source + "|" + r.zone;
       var b = by[k] = by[k] || { n: 0, zero: 0, withdrawn: 0, sizes: [] };
       b.n++;
@@ -1398,7 +1404,7 @@
 
   function renderHistogram(s, revs) {
     var el = $("hist-chart");
-    var real = revs.filter(function (r) { return !isCompletion(r); });
+    var real = revs.filter(isRevision);
     var done = dedupeJoint(revs).filter(isCompletion);
     if (!real.length && !done.length) { el.innerHTML = '<p class="empty-chart">No revision has been recorded in the ' + esc(state.cov.label) + '.</p>'; return; }
     var HOUR = 3600000;
@@ -1655,7 +1661,7 @@
   /* The log lists revisions; prices a later auction completed join only when asked for,
      and then the Type column shows itself so they are not mistaken for revisions. */
   function doneToggle(t, revs) {
-    var done = revs.filter(isCompletion), label = t.doneLabel;
+    var done = revs.filter(function (r) { return !isRevision(r); }), label = t.doneLabel;
     if (!done.length) {
       if (label) {
         label.remove(); t.doneLabel = null;
@@ -1681,14 +1687,17 @@
     }
     var m = done.length;
     var entries = dedupeJoint(done).length;
-    label.lastChild.textContent = "Also list completions by a later auction (" +
+    /* Name only the kinds present, so older data files read exactly as before. */
+    var names = { completed: "completions by a later auction", filled: "prices filled in late", unresolved: "unresolved changes from 0.00" };
+    var kinds = ["completed", "filled", "unresolved"].filter(function (k) { return done.some(function (r) { return r.kind === k; }); });
+    label.lastChild.textContent = "Also list " + joinList(kinds.map(function (k) { return names[k]; })) + " (" +
       fmtInt(entries) + " log " + (entries === 1 ? "entry" : "entries") + ", shown as " + fmtInt(m) + " zone row" + (m === 1 ? "" : "s") + ")";
   }
 
   function renderRevisionTable(revs) {
     var change = function (r) { return r.new == null ? null : r.new - r.old; };
     var after = function (r) { return (Date.parse(r.revised_at) - Date.parse(r.first_published_at)) / 3600000; };
-    var real = revs.filter(function (r) { return !isCompletion(r); });
+    var real = revs.filter(isRevision);
     var t = state.tables.revisions;
     if (t) {
       t.allRows = revs; t.realRows = real;
@@ -2403,7 +2412,10 @@
   /* Both files are requested at once; a revision log that fails to load is an empty one. */
   var revisionsRequest = loadRevisions().then(function (rev) { return rev || { list: [], kept: null }; });
   fetchJson("/data/summary.json").then(function (summary) {
+    /* Every figure is placed in time from generated_at, so a file without a valid one is
+       treated like an unreadable file: the explanations stay, the figures do not appear. */
     if (!summary || summary.schema !== 1) throw new Error("unsupported data schema");
+    if (!validTime(summary.generated_at)) throw new Error("summary has no valid generated_at");
     state.summary = summary;
     return revisionsRequest.then(function (rev) {
       state.revisions = rev.list;

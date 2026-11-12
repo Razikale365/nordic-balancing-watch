@@ -68,7 +68,9 @@ test("with JavaScript off, the explanations are readable and the data files are 
 for (const [name, handle] of [
   ["return an error", (r) => r.fulfill({ status: 502, contentType: "application/json", body: '{"ok":false}' })],
   ["cannot be reached", (r) => r.abort("connectionfailed")],
-  ["are not schema-1 data", (r) => r.fulfill({ status: 200, contentType: "application/json", body: '{"schema":2}' })]
+  ["are not schema-1 data", (r) => r.fulfill({ status: 200, contentType: "application/json", body: '{"schema":2}' })],
+  ["have no valid generation time", (r) => r.fulfill({ status: 200, contentType: "application/json",
+    body: '{"schema":1,"generated_at":"not a time","groups":[],"revisions":[]}' })]
 ]) {
   test(`when the data files ${name}, the explanations stay and a notice says why figures are missing`, async () => {
     const { page, errors, close } = await open({ route: { match: "**/data/*.json", handle } });
@@ -658,6 +660,41 @@ test("the chart, the recent list and the log keep completions apart from revisio
   }
 });
 
+// A 0.00 another source already had the real price for is "filled", and one no other source
+// could confirm is "unresolved". Neither is a revision: both stay out of the headline, the
+// default log and the change chart, and join the log only on request, tagged.
+test("filled and unresolved changes are listed apart from revisions", async () => {
+  const route = routeRevisions((r) => {
+    const base = { data: "FCR-D up", interval_minutes: 60, field: "price_eur_per_mw", unit: "EUR/MW",
+      old: 0, new: 1.5, first_published_at: "2026-10-23T10:00:00Z", revised_at: "2026-10-24T18:50:00Z" };
+    r.revisions.unshift(
+      { ...base, source: "fingrid", zone: "FI", interval_start: "2026-10-24T05:00:00Z", kind: "filled" },
+      { ...base, source: "svk", zone: "SE3", interval_start: "2026-10-24T06:00:00Z", kind: "unresolved" }
+    );
+    r.kept = { ...r.kept, other: r.kept.other + 2, other_total: r.kept.other_total + 2 };
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const tile = page.locator("#stats .stat").filter({ hasText: "Prices revised" });
+    assert.equal(await tile.locator(".v").innerText(), "1");
+    assert.equal(await page.locator("#recent .tag.filled").count(), 1);
+    assert.equal(await page.locator("#recent .tag.unresolved").count(), 1);
+    assert.match(await page.locator("#recent").innerText(), /Fingrid · FI FCR-D up Filled in late/);
+    const toggle = page.locator("#rev-table .rev-done");
+    assert.match(await toggle.innerText(),
+      /Also list completions by a later auction, prices filled in late and unresolved changes from 0\.00 \(3 log entries, shown as 7 zone rows\)/);
+    assert.equal(await page.locator("#rev-table tbody tr").count(), 3);
+    await toggle.locator("input").check();
+    assert.equal(await page.locator("#rev-table tbody tr").count(), 10);
+    assert.equal(await page.locator("#rev-table .tag.filled").count(), 1);
+    assert.equal(await page.locator("#rev-table .tag.unresolved").count(), 1);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
 test("the recent list shows each joint-market completion once and counts the rest the same way", async () => {
   const route = routeRevisions((r) => {
     const extra = r.revisions.filter((x) => x.kind === "completed").map((x) =>
@@ -896,6 +933,44 @@ test("reserve counts stay in quarter-hours when one is not a multiple of four", 
     const heads = (await page.locator("#reserve-table thead .th-btn").allInnerTexts()).map((h) => h.toLowerCase());
     assert.ok(heads.includes("quarter-hours"), heads.join(" | "));
     assert.doesNotMatch(await page.locator("#restab-note").innerText(), /Counts are in hours/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// The lead basis is chosen once for all reserve series. When the data measures lead to the
+// start of delivery, a series without that value is left out, not mixed in on the other basis.
+test("a reserve series without the delivery-start lead is left out, not mixed in", async () => {
+  const route = routeSummary((s) => {
+    s.groups.filter((g) => g.data !== "imbalance").forEach((g) => {
+      g.last7.from_start_p50 = g.last7.p50 + 60; g.last7.from_start_p95 = g.last7.p95 + 60; g.last7.seen_after_start = 0;
+    });
+    const svk = s.groups.find((g) => g.source === "svk" && g.data === "FCR-N");
+    svk.last7.from_start_p50 = null; svk.last7.from_start_p95 = null; svk.last7.seen_after_start = null;
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    assert.match(await page.locator("#lead-sub").innerText(), /measured to the start of delivery\./);
+    assert.doesNotMatch(await page.locator("#lead-chart").innerText(), /Svenska kraftnät · FCR-N/);
+    const row = (await page.locator("#reserve-table tbody tr").allInnerTexts()).find((t) => /Svenska kraftnät\s+FCR-N/.test(t));
+    assert.match(row, /Svenska kraftnät\s+FCR-N\s+SE3\s+—\s+—/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// Log entries from data files older than the "kind" field are revisions, as they were then.
+test("log entries without a kind count as revisions", async () => {
+  const route = routeRevisions((r) => { r.revisions.forEach((x) => { if (x.kind === "changed") delete x.kind; }); });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const tile = page.locator("#stats .stat").filter({ hasText: "Prices revised" });
+    assert.equal(await tile.locator(".v").innerText(), "1");
+    assert.equal(await page.locator("#rev-table tbody tr").count(), 3);
     assert.deepEqual(errors, []);
   } finally {
     await close();

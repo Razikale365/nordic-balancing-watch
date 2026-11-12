@@ -15,7 +15,9 @@ TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 SOURCES = {"esett", "energidataservice", "entsoe", "fingrid", "svk"}
 FIELDS = {"imbalance_price_eur", "imbalance_price_dkk", "price_eur_per_mw"}
-KINDS = {"changed", "withdrawn", "completed"}
+# "filled": a 0.00 another source already had the real price for; "unresolved": a change from
+# 0.00 that no other source could confirm (added 2026-11-12). Neither is a revision.
+KINDS = {"changed", "withdrawn", "completed", "filled", "unresolved"}
 # Optional per-zone detail files, one per price zone, the same names the data function allows.
 ZONE_FILE_RE = re.compile(r"^zone-(DK[12]|FI|NO[1-5]|SE[1-4])\.json$")
 ZONE_CONTEXT = ("direction", "mfrr_up", "mfrr_down")
@@ -83,7 +85,7 @@ def check_last7(l, where, errors):
         errors.append(f"{where}: last7.max_start must be an ISO timestamp ending in Z or null")
     # Added 2026-11-11: prices first seen more than 48 hours late (counted, not timed), and
     # for reserve products the quarter-hours first seen after delivery had started.
-    for k in ("late", "seen_after_start"):
+    for k in ("late", "seen_after_start", "filled", "unresolved"):
         if k in l and not is_nonneg_int(l[k]):
             errors.append(f"{where}: last7.{k} must be a non-negative integer")
     # Added 2026-11-12: reserve revisions made after delivery, decided per change (null for
@@ -291,7 +293,7 @@ def check_revisions(data, errors):
             errors.append(f"{where}: kind must be one of {sorted(KINDS)}")
         elif kind == "withdrawn" and r.get("new") is not None:
             errors.append(f"{where}: withdrawn entries must have new = null")
-        elif kind in ("changed", "completed") and not is_num(r.get("new")):
+        elif kind in ("changed", "completed", "filled", "unresolved") and not is_num(r.get("new")):
             errors.append(f"{where}: {kind} entries must have a numeric new")
 
 
