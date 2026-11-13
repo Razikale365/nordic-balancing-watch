@@ -231,6 +231,15 @@ def check_now(now, errors):
         for k in ("price", "minutes_since_end"):
             if not is_num(e.get(k)):
                 errors.append(f"{where}: {k} must be a number")
+        # Optional, eSett Finland only: true when no other source shows this 0.00.
+        if "unconfirmed_zero" in e:
+            uz = e["unconfirmed_zero"]
+            if not isinstance(uz, bool):
+                errors.append(f"{where}: unconfirmed_zero must be a boolean")
+            elif e.get("source") != "esett":
+                errors.append(f"{where}: unconfirmed_zero is only for eSett entries")
+            elif uz and e.get("price") != 0:
+                errors.append(f"{where}: unconfirmed_zero needs a price of 0")
 
 
 def check_kept(kept, errors):
@@ -304,6 +313,10 @@ def check_revisions(data, errors):
                     for o in others)
         ):
             errors.append(f"{where}: others must be a list of {{source, value}} from known sources")
+        # Optional, withdrawn entries only: the row stopped being returned ("removed") or
+        # is still returned with an empty price ("blanked").
+        if "withdrawal" in r and (kind != "withdrawn" or r["withdrawal"] not in ("removed", "blanked")):
+            errors.append(f"{where}: withdrawal must be 'removed' or 'blanked' and only on withdrawn entries")
 
 
 def check_zone(data, name, errors):
@@ -334,6 +347,15 @@ def check_zone(data, name, errors):
     if len(lengths) > 1:
         errors.append(f"{name}: every list must have the same length")
     n = lengths.pop() if len(lengths) == 1 else 0
+    # Optional: grid indices where eSett shows 0.00 and no other source does.
+    uz = data.get("unconfirmed_zeros")
+    if uz is not None:
+        esett = series.get("esett")
+        if not (isinstance(uz, list) and all(is_int(i) and 0 <= i < n for i in uz)
+                and all(a < b for a, b in zip(uz, uz[1:]))):
+            errors.append(f"{name}: unconfirmed_zeros must be a strictly increasing list of grid indices")
+        elif uz and not (isinstance(esett, list) and all(esett[i] == 0 and esett[i] is not None for i in uz)):
+            errors.append(f"{name}: unconfirmed_zeros must point at eSett values of 0")
     revs = data.get("revisions")
     if not isinstance(revs, list):
         errors.append(f"{name}: revisions must be a list")

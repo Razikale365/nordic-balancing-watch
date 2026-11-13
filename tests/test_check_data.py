@@ -338,3 +338,96 @@ def test_zone_file_must_match_its_name(tmp_path):
     res = run_check(zone_dir(tmp_path, lambda z: None, name="zone-SE4.json"))
     assert res.returncode != 0
     assert "zone must be 'SE4'" in res.stderr
+
+
+def test_withdrawal_kinds_on_withdrawn_entries_pass(tmp_path):
+    def change(r):
+        for rev, kind in zip(r["revisions"][:2], ("removed", "blanked")):
+            rev["kind"] = "withdrawn"
+            rev["new"] = None
+            rev["withdrawal"] = kind
+    res = run_check(make_dir(tmp_path, revisions=change, summary=lambda s: s["groups"][0]["last7"].update(withdrawn=2)))
+    assert res.returncode == 0, res.stderr
+
+
+def test_bad_withdrawal_fails(tmp_path):
+    cases = [("withdrawn", "gone"), ("withdrawn", True), ("changed", "removed")]
+    for n, (kind, bad) in enumerate(cases):
+        def breakit(r, kind=kind, bad=bad):
+            r["revisions"][0]["kind"] = kind
+            r["revisions"][0]["new"] = None if kind == "withdrawn" else 1.0
+            r["revisions"][0]["withdrawal"] = bad
+        d = tmp_path / f"w{n}"
+        d.mkdir()
+        res = run_check(make_dir(d, revisions=breakit))
+        assert res.returncode != 0, (kind, bad)
+        assert "withdrawal must be" in res.stderr
+
+
+def test_unconfirmed_zeros_on_a_zone_pass(tmp_path):
+    def change(z):
+        z["series"]["esett"][3] = 0
+        z["series"]["esett"][7] = 0.0
+        z["unconfirmed_zeros"] = [3, 7]
+    res = run_check(zone_dir(tmp_path, change))
+    assert res.returncode == 0, res.stderr
+
+
+def test_empty_unconfirmed_zeros_pass(tmp_path):
+    res = run_check(zone_dir(tmp_path, lambda z: z.update(unconfirmed_zeros=[])))
+    assert res.returncode == 0, res.stderr
+
+
+def test_bad_unconfirmed_zeros_fail(tmp_path):
+    def zeros(z):
+        z["series"]["esett"][3] = 0
+        z["series"]["esett"][7] = 0
+    cases = ["3", [3, "7"], [7, 3], [3, 3], [-1], [672], [True], [3, 8], [0]]
+    for n, bad in enumerate(cases):
+        def breakit(z, bad=bad):
+            zeros(z)
+            z["unconfirmed_zeros"] = bad
+        d = tmp_path / f"z{n}"
+        d.mkdir()
+        res = run_check(zone_dir(d, breakit))
+        assert res.returncode != 0, bad
+        assert "unconfirmed_zeros must" in res.stderr
+
+
+def test_unconfirmed_zeros_need_an_esett_series(tmp_path):
+    def breakit(z):
+        del z["series"]["esett"]
+        z["unconfirmed_zeros"] = [3]
+    res = run_check(zone_dir(tmp_path, breakit))
+    assert res.returncode != 0
+    assert "unconfirmed_zeros must point at eSett" in res.stderr
+
+
+def test_unconfirmed_zero_on_a_now_entry_passes(tmp_path):
+    def change(s):
+        s["now"][1]["price"] = 0
+        s["now"][1]["unconfirmed_zero"] = True
+        s["now"][0]["price"] = 0
+    def false_flag(s):
+        s["now"][1]["unconfirmed_zero"] = False
+    assert run_check(make_dir(tmp_path, summary=change)).returncode == 0
+    d = tmp_path / "f"
+    d.mkdir()
+    res = run_check(make_dir(d, summary=false_flag))
+    assert res.returncode == 0, res.stderr
+
+
+def test_bad_unconfirmed_zero_fails(tmp_path):
+    def not_bool(s):
+        s["now"][1]["unconfirmed_zero"] = "yes"
+    def wrong_source(s):
+        s["now"][0]["price"] = 0
+        s["now"][0]["unconfirmed_zero"] = True
+    def not_zero(s):
+        s["now"][1]["unconfirmed_zero"] = True
+    for n, (breakit, text) in enumerate([(not_bool, "must be a boolean"), (wrong_source, "only for eSett"), (not_zero, "needs a price of 0")]):
+        d = tmp_path / f"u{n}"
+        d.mkdir()
+        res = run_check(make_dir(d, summary=breakit))
+        assert res.returncode != 0
+        assert text in res.stderr

@@ -49,6 +49,8 @@
      auction for a completion, and for a revision the other sources that logged the same
      change of the same price. Empty when the data says nothing more. */
   function basisOf(r, all) {
+    if (r.kind === "withdrawn" && r.withdrawal === "removed") return "Missing in two checks in a row";
+    if (r.kind === "withdrawn" && r.withdrawal === "blanked") return "Row still returned, price empty";
     if (r.kind === "completed") return "A later auction was added";
     if (Array.isArray(r.others)) {
       var held = r.others.filter(function (o) { return o && typeof o.value === "number" && isFinite(o.value); });
@@ -1245,6 +1247,7 @@
     (s.groups || []).forEach(function (g) { if (g.data === "imbalance" && g.last7) p95[g.source + "|" + g.zone] = g.last7.p95; });
     var zones = uniq(now.map(function (e) { return e.zone; })).sort(function (a, b) { return zoneIndex(a) - zoneIndex(b); });
     var zeroSeen = false;
+    var flagged = now.some(function (e) { return typeof e.unconfirmed_zero === "boolean"; });
     var head = '<thead><tr><th scope="col" class="zone-col"><span class="th-pad">Zone</span></th>' + cats.map(function (c) {
       return '<th scope="col"><span class="th-pad"><span class="src">' + swatch(c) + esc(CAT_LABEL[c]) + "</span></span></th>";
     }).join("") + "</tr></thead>";
@@ -1256,7 +1259,7 @@
         var e = entries.filter(function (x) { return cat(x.source) === c; })[0];
         var lab = ' data-label="' + esc(CAT_LABEL[c]) + '"';
         if (!e) return '<td class="muted"' + lab + ">—</td>";
-        var zero = e.price === 0 && e.source === "esett";
+        var zero = flagged ? e.unconfirmed_zero === true : e.price === 0 && e.source === "esett";
         zeroSeen = zeroSeen || zero;
         var limit = p95[e.source + "|" + z];
         var late = limit != null && e.minutes_since_end > limit + 30;
@@ -1271,7 +1274,9 @@
     }).join("");
     table.innerHTML = head + "<tbody>" + body + "</tbody>";
     $("board-legend").innerHTML = "";
-    $("board-note").textContent = (zeroSeen ? "* In this data, eSett values of 0.00 have often been replaced by a different value later. " : "") +
+    $("board-note").textContent = (zeroSeen ? (flagged
+      ? "* No other source shows 0.00 for this interval. For Finland, eSett’s first figure can be a stand-in that is replaced later. "
+      : "* In this data, eSett values of 0.00 have often been replaced by a different value later. ") : "") +
       "Click a zone for its last 7 days from every source. " +
       "The change is against the interval before; the line shows up to the last 4 hours. " +
       "Times are when each 15-minute interval started, and how long ago it ended. " +
@@ -2173,16 +2178,16 @@
     var interim = [];
     if (d.series.esett) {
       for (var i = s0; i <= last; i++) {
-        if (d.series.esett[i] !== 0) continue;
-        var other = srcs.some(function (s) { return s !== "esett" && d.series[s][i] != null && Math.abs(d.series[s][i]) >= 1; });
-        if (other) interim.push(i);
+        if (zdUnconfirmed(d, srcs, i)) interim.push(i);
       }
     }
     var notes = [];
     if (interim.length) {
       notes.push('<span class="zd-warn">eSett shows 0.00 for ' + interim.length + (interim.length === 1 ? " interval" : " intervals") +
         " (" + esc(interim.slice(-4).map(when).join(", ")) + (interim.length > 4 ? ", …" : "") +
-        ") while another source has the price. eSett&rsquo;s first figure can be a placeholder that is settled later.</span>");
+        (Array.isArray(d.unconfirmed_zeros)
+          ? ") that no other source confirms. For Finland, eSett&rsquo;s first figure can be a stand-in that is replaced later.</span>"
+          : ") while another source has the price. eSett&rsquo;s first figure can be a placeholder that is settled later.</span>"));
     }
     if (revs.length) {
       var changed = uniq(revs.map(function (r) { return r[0]; })).length;
@@ -2193,6 +2198,15 @@
 
     zdChart(d, srcs, s0, last, revs, interim, iso, hm);
     zdStats(d, srcs, s0, last, revs, when);
+  }
+
+  /* Whether eSett's 0.00 at grid index i is one nobody else confirms. The data lists these
+     (unconfirmed_zeros); only when it does not, a 0.00 against another source at 1 or more
+     stands in. Used for the chart marks, the note and the disagreement count alike. */
+  function zdUnconfirmed(d, srcs, i) {
+    if (!d.series.esett || d.series.esett[i] !== 0) return false;
+    if (Array.isArray(d.unconfirmed_zeros)) return d.unconfirmed_zeros.indexOf(i) !== -1;
+    return srcs.some(function (s) { return s !== "esett" && d.series[s][i] != null && Math.abs(d.series[s][i]) >= 1; });
   }
 
   function zdChart(d, srcs, s0, last, revs, interim, iso, hm) {
@@ -2310,7 +2324,7 @@
       var seen = srcs.filter(function (s) {
         var x = d.series[s][i];
         /* eSett's 0.00 placeholder is flagged on its own, not counted as a disagreement. */
-        return x != null && !(s === "esett" && x === 0 && srcs.some(function (o) { return o !== s && d.series[o][i] != null && Math.abs(d.series[o][i]) >= 1; }));
+        return x != null && !(s === "esett" && zdUnconfirmed(d, srcs, i));
       }).map(function (s) { return d.series[s][i]; });
       if (seen.length < 2) continue;
       both++;
