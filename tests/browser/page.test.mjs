@@ -1225,3 +1225,123 @@ test("crawler files and unknown addresses are served as expected", async () => {
     await close();
   }
 });
+
+// A withdrawal says how the price went: the row stopped coming back, or came back empty.
+test("the Basis column says whether a withdrawn price was removed or blanked", async () => {
+  const route = routeRevisions((r) => {
+    const base = { ...r.revisions[0], new: null, kind: "withdrawn" };
+    r.revisions.unshift(
+      { ...base, interval_start: "2026-10-24T10:00:00Z", withdrawal: "removed" },
+      { ...base, interval_start: "2026-10-24T11:00:00Z", withdrawal: "blanked" },
+      { ...base, interval_start: "2026-10-24T12:00:00Z" }
+    );
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const rows = await page.locator("#rev-table tbody tr").allInnerTexts();
+    assert.ok(rows.some((t) => t.includes("Missing in two checks in a row")), rows.join("\n"));
+    assert.ok(rows.some((t) => t.includes("Row still returned, price empty")), rows.join("\n"));
+    // A withdrawal without the field keeps the old reading: nothing is said about how.
+    assert.equal(rows.filter((t) => t.includes("Missing in two checks") || t.includes("price empty")).length, 2);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// eSett's 0.00 with no other source behind it: the data names those intervals when it can.
+const ZONE_SE3 = JSON.parse(readFileSync(new URL("../fixtures/data/zone-SE3.json", import.meta.url), "utf8"));
+function routeZone(change) {
+  const z = structuredClone(ZONE_SE3);
+  change(z);
+  return { match: "**/data/zone-SE3.json", handle: (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(z) }) };
+}
+// The fixture has eSett at 0.00 against ENTSO-E at 46.80 in interval 665.
+async function openSe3(change) {
+  const opened = await open({ route: routeZone(change) });
+  await opened.page.locator("tr.zd-row[data-zone=SE3]").click();
+  await opened.page.locator("#zd-chart .zd-hit").waitFor();
+  const text = async () => ({
+    note: await opened.page.locator("#zd-note").innerText(),
+    differ: await opened.page.locator("#zd-stats .zd-stat").filter({ hasText: "Sources differ" }).locator("b").innerText()
+  });
+  return { ...opened, text };
+}
+const STAND_IN = "that no other source confirms. For Finland, eSett’s first figure can be a stand-in that is replaced later.";
+
+test("a zone file that lists unconfirmed zeros gets the new note and leaves them out of the disagreements", async () => {
+  const base = await openSe3(() => {});
+  let baseline;
+  try {
+    baseline = await base.text();
+    assert.ok(baseline.note.includes("while another source has the price"), baseline.note);
+    assert.equal(baseline.note.includes("stand-in"), false);
+  } finally {
+    await base.close();
+  }
+  const { text, errors, close } = await openSe3((z) => { z.unconfirmed_zeros = [665]; z.series.entsoe[665] = 0.4; });
+  try {
+    const got = await text();
+    assert.ok(got.note.includes("eSett shows 0.00 for 1 interval ("), got.note);
+    assert.ok(got.note.includes(STAND_IN), got.note);
+    assert.equal(got.note.includes("while another source has the price"), false);
+    // The 0.40 from the other source does not make this a disagreement: the count is the fallback's.
+    assert.equal(got.differ, baseline.differ);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("a zone file with an empty list counts an eSett 0.00 against another source as a disagreement", async () => {
+  const base = await openSe3(() => {});
+  let baseline;
+  try {
+    baseline = await base.text();
+  } finally {
+    await base.close();
+  }
+  const { text, errors, close } = await openSe3((z) => { z.unconfirmed_zeros = []; z.series.entsoe[665] = 35; });
+  try {
+    const got = await text();
+    const [d0, b0] = baseline.differ.split(" of ").map((v) => Number(v.replace(/\D/g, "")));
+    assert.equal(got.differ, `${d0 + 1} of ${b0 + 1}`);
+    assert.equal(got.note.includes("eSett shows 0.00"), false, got.note);
+    assert.equal(got.note.includes("stand-in"), false, got.note);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("the price board stars the eSett prices the data marks as unconfirmed zeros", async () => {
+  const boardWith = async (flag) => {
+    const route = routeSummary((s) => {
+      s.now[1].price = 0;
+      if (flag === undefined) delete s.now[1].unconfirmed_zero;
+      else s.now[1].unconfirmed_zero = flag;
+    });
+    const { page, errors, close } = await open({ route });
+    try {
+      await page.locator("#board .px").first().waitFor();
+      assert.deepEqual(errors, []);
+      return {
+        stars: await page.locator("#board .px").filter({ hasText: "*" }).count(),
+        note: await page.locator("#board-note").innerText()
+      };
+    } finally {
+      await close();
+    }
+  };
+  const marked = await boardWith(true);
+  assert.equal(marked.stars, 1);
+  assert.ok(marked.note.includes("* No other source shows 0.00 for this interval. For Finland, eSett’s first figure can be a stand-in that is replaced later."), marked.note);
+  const confirmed = await boardWith(false);
+  assert.equal(confirmed.stars, 0);
+  assert.equal(confirmed.note.includes("*"), false, confirmed.note);
+  // Without the field the old rule applies: any eSett price of 0.
+  const old = await boardWith(undefined);
+  assert.equal(old.stars, 1);
+  assert.ok(old.note.includes("* In this data, eSett values of 0.00 have often been replaced by a different value later."), old.note);
+});
