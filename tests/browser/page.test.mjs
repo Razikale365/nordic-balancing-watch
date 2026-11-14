@@ -428,7 +428,7 @@ test("a log that says what it keeps is described that way", async () => {
     assert.equal(notes.length, 2);
     for (const note of notes) {
       // The fixture covers the first 3.5 days of collection, and the note names that window.
-      assert.equal(note, "The log keeps every imbalance price change in the first 3.5 days of collection (480) and the newest 20 of 1,200 reserve price changes, " +
+      assert.equal(note, "The log keeps every imbalance price change in the first 3.5 days of collection (480) and the newest 20 of 1,200 reserve price changes (one row per zone; neighbouring hours with the same change share a row), " +
         "back to 23 Oct, 08:30 UTC. The revision log, its CSV and the charts built from it cover only those entries.");
     }
     assert.deepEqual(errors, []);
@@ -448,7 +448,7 @@ test("a log that had to cut imbalance changes does not claim to keep them all", 
     const notes = await page.locator("[data-revcap]").allInnerTexts();
     assert.equal(notes.length, 2);
     for (const note of notes) {
-      assert.equal(note, "The log keeps the newest 500 of 650 imbalance price changes and the newest 0 of 1,200 reserve price changes. " +
+      assert.equal(note, "The log keeps the newest 500 of 650 imbalance price changes and the newest 0 of 1,200 reserve price changes (one row per zone; neighbouring hours with the same change share a row). " +
         "The revision log, its CSV and the charts built from it cover only those entries.");
     }
     assert.deepEqual(errors, []);
@@ -614,7 +614,7 @@ test("the headline tile counts each revised price once and names the completions
     const tile = page.locator("#stats .stat").filter({ hasText: "Prices revised" });
     assert.equal(await tile.locator(".v").innerText(), "1");
     assert.match(await tile.locator(".s").innerText(), /^3 changes logged across 3 sources · /);
-    assert.match(await tile.locator(".s").innerText(), /plus 34 reserve quarter-hours completed by a later auction/);
+    assert.match(await tile.locator(".s").innerText(), / · not counted here: 34 reserve quarter-hours completed by a later auction$/);
     assert.deepEqual(errors, []);
   } finally {
     await close();
@@ -809,12 +809,12 @@ test("the share changed later follows prices watched for 14 days or more", async
     assert.equal(await page.locator("#stats .stat").filter({ hasText: "First prices changed so far" }).count(), 0);
     const tile = page.locator("#stats .stat").filter({ hasText: "First prices changed later" });
     assert.equal(await tile.locator(".v").innerText(), "0.5%");
-    assert.equal(await tile.locator(".s").innerText(), "2 of 384 imbalance prices first seen 5–6 Oct, watched 14 days or more");
+    assert.equal(await tile.locator(".s").innerText(), "2 of 384 imbalance prices first seen 5–6 Oct, each source counted, watched 14 days or more");
     assert.match(await page.locator("#share-sub").innerText(),
       /^Prices first seen 5–6 Oct, watched for 14 days or more, that were changed or withdrawn since\. Newer prices are left out because they can still change\.$/);
     assert.match(await page.locator("#share-chart").innerText(), /ENTSO-E · FI/);
     assert.ok((await page.locator("#findings li").allInnerTexts()).includes(
-      "Of the 384 first prices seen 5–6 Oct, each watched for 14 days or more, 0.5% (2) were changed later."));
+      "Of the 384 first prices seen 5–6 Oct, before this window (each source counted, each price watched for 14 days or more), 0.5% (2) were changed later."));
     assert.match(await page.locator("#share-note").innerText(), /^No change to those prices at: eSett \(DK1\)\./);
     assert.deepEqual(errors, []);
   } finally {
@@ -887,6 +887,60 @@ test("two sources within five minutes of each other are level, not first and sec
   }
 });
 
+// The source first in most zones is not the only one first somewhere: a national TSO that
+// leads in its own zones is named in the tile and in the findings, with its own delay.
+test("a source that is first only in some zones is named next to the leading one", async () => {
+  const route = routeSummary((s) => {
+    const base = s.groups.filter((g) => g.data === "imbalance");
+    const set = (source, zone, p50) => {
+      const g = structuredClone(base[0]);
+      g.source = source; g.zone = zone; g.last7.p50 = p50; g.last7.max_start = null;
+      return g;
+    };
+    s.groups = s.groups.filter((g) => g.data !== "imbalance").concat([
+      set("energidataservice", "DK1", 25.1), set("entsoe", "DK1", 46), set("esett", "DK1", 67.4),
+      set("energidataservice", "DK2", 25.1), set("entsoe", "DK2", 46), set("esett", "DK2", 67.4),
+      set("entsoe", "NO1", 15.7), set("esett", "NO1", 104.7),
+      set("entsoe", "NO2", 15.7), set("esett", "NO2", 104.7),
+      set("entsoe", "SE1", 30.6), set("esett", "SE1", 59.7),
+      set("entsoe", "FI", 45.6), set("fingrid", "FI", 45.4), set("esett", "FI", 90)
+    ]).sort((a, b) => ([a.source, a.data, a.zone].join("|") < [b.source, b.data, b.zone].join("|") ? -1 : 1));
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#findings li").first().waitFor();
+    const first = (await page.locator("#findings li").allInnerTexts())[0];
+    assert.equal(first, "The imbalance price usually shows up first on ENTSO-E: in 3 of 6 price zones, about 16–31 minutes after each 15 minutes end. " +
+      "In DK1, DK2 Energinet is first, about 25 minutes after. In FI the first two sources are level, within 5 minutes of each other.");
+    const tile = page.locator("#stats .stat").filter({ hasText: "First price seen after" });
+    assert.equal(await tile.locator(".s").innerText(), "Median zone · ENTSO-E first in 3 of 6 · Energinet in 2 · level in 1");
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// Energi Data Service re-converts the krone value of many 15-minute prices at once, so the
+// note counts prices, per zone, and never calls the count a number of recalculations.
+test("the currency note counts 15-minute prices per zone", async () => {
+  const route = routeSummary((s) => {
+    s.groups.filter((g) => g.data === "imbalance" && g.source === "esett").forEach((g) => { g.last7.currency_recalculations = 304; });
+  });
+  const { page, errors, close } = await open({ route });
+  try {
+    await page.locator("#stats .stat").first().waitFor();
+    const notes = await page.locator("[data-currency]").allInnerTexts();
+    assert.ok(notes.length > 0);
+    for (const note of notes) {
+      assert.equal(note, "Energi Data Service also recalculated the Danish-krone value of 608 15-minute prices (304 in DK1, 304 in DK2) in the window, " +
+        "the euro price unchanged. Those currency recalculations are not revisions and are not in the log.");
+    }
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
 // Reserve prices are published per hour and spread over four quarter-hour records, so when
 // every reserve count is a multiple of four the page counts hours. Any other count means a
 // source changed its resolution, and the page keeps quarter-hours (the fixture's own data).
@@ -901,11 +955,13 @@ test("reserve counts are shown per published hour when every count is a multiple
   try {
     await page.locator("#stats .stat").first().waitFor();
     const tile = page.locator("#stats .stat").filter({ hasText: "Prices revised" });
-    assert.match(await tile.locator(".s").innerText(), /plus 34 hourly reserve prices completed by a later auction/);
+    assert.match(await tile.locator(".s").innerText(), / · not counted here: 34 hourly reserve prices completed by a later auction$/);
     const heads = (await page.locator("#reserve-table thead .th-btn").allInnerTexts()).map((h) => h.toLowerCase());
     assert.ok(heads.includes("hours") && !heads.includes("quarter-hours"), heads.join(" | "));
     assert.match(await page.locator("#restab-note").innerText(), /Counts are in hours, the unit the sources publish reserve prices in\./);
-    assert.match(await page.locator("#lead-callout").innerText(), /completed by a later auction in 18 hours in each zone/);
+    assert.match(await page.locator("#lead-callout").innerText(), /Energinet FCR-N \(DK2, SE1–SE4\): a later auction completed 18 hourly prices in each zone,/);
+    // Several products together count prices, not hours of the week, and list each product.
+    assert.match(await page.locator("#findings").innerText(), /a later auction completed 34 hourly prices in each zone \(FCR-D down 6, FCR-D up 10, FCR-N 18\)/);
     assert.deepEqual(errors, []);
   } finally {
     await close();
@@ -1021,11 +1077,11 @@ test("the findings and the reserve call-out say completions per zone, revisions 
   try {
     await page.locator("#stats .stat").first().waitFor();
     const findings = await page.locator("#findings").innerText();
-    assert.match(findings, /completed by a later auction in 34 quarter-hours in each zone/);
+    assert.match(findings, /when the next auction clears: a later auction completed 34 quarter-hour prices in each zone \(FCR-D down 6, FCR-D up 10, FCR-N 18\); 10 zone-quarter-hours revised\./);
     assert.match(findings, /10 zone-quarter-hours revised/);
     const callout = await page.locator("#lead-callout").innerText();
-    assert.match(callout, /Energinet FCR-D \(DK2, SE1–SE4\): completed by a later auction in 16 quarter-hours in each zone/);
-    assert.match(callout, /Energinet FCR-N \(DK2, SE1–SE4\): completed by a later auction in 18 quarter-hours in each zone/);
+    assert.match(callout, /Energinet FCR-D \(DK2, SE1–SE4\): a later auction completed 16 quarter-hour prices in each zone \(FCR-D down 6, FCR-D up 10\)/);
+    assert.match(callout, /Energinet FCR-N \(DK2, SE1–SE4\): a later auction completed 18 quarter-hour prices in each zone,/);
     assert.match(callout, /10 zone-quarter-hours revised/);
     assert.match(callout, /Fingrid FCR-D \(FI\): re-priced in 4 zone-quarter-hours/);
     assert.doesNotMatch(findings + callout, /170 quarter-hours|180 zone-quarter-hours|170 zone-quarter-hours/);
@@ -1042,10 +1098,10 @@ test("completions that differ by zone are said as a per-zone range", async () =>
   const { page, errors, close } = await open({ route });
   try {
     await page.locator("#stats .stat").first().waitFor();
-    assert.match(await page.locator("#findings").innerText(), /completed by a later auction in 66–78 quarter-hours per zone/);
+    assert.match(await page.locator("#findings").innerText(), /a later auction completed 66–78 quarter-hour prices per zone \(FCR-D down 17–21, FCR-D up 22–26, FCR-N 27–31\)/);
     const callout = await page.locator("#lead-callout").innerText();
-    assert.match(callout, /Energinet FCR-D \(DK2, SE1–SE4\): completed by a later auction in 39–47 quarter-hours per zone/);
-    assert.match(callout, /Energinet FCR-N \(DK2, SE1–SE4\): completed by a later auction in 27–31 quarter-hours per zone/);
+    assert.match(callout, /Energinet FCR-D \(DK2, SE1–SE4\): a later auction completed 39–47 quarter-hour prices per zone \(FCR-D down 17–21, FCR-D up 22–26\)/);
+    assert.match(callout, /Energinet FCR-N \(DK2, SE1–SE4\): a later auction completed 27–31 quarter-hour prices per zone,/);
     assert.deepEqual(errors, []);
   } finally {
     await close();
@@ -1084,7 +1140,7 @@ test("the findings and the call-out name the completion lag, not the revision la
     await page.locator("#stats .stat").first().waitFor();
     assert.match(await page.locator("#findings").innerText(), /are then updated about 18 h later, when the next auction clears/);
     const callout = await page.locator("#lead-callout").innerText();
-    assert.match(callout, /Energinet FCR-N \(DK2, SE1–SE4\): completed by a later auction in 18 quarter-hours in each zone, typically 18 h after first publication; 10 zone-quarter-hours revised/);
+    assert.match(callout, /Energinet FCR-N \(DK2, SE1–SE4\): a later auction completed 18 quarter-hour prices in each zone, typically 18 h after first publication; 10 zone-quarter-hours revised/);
     assert.doesNotMatch(callout, /6\.0 h/);
     assert.match(callout, /Fingrid FCR-D \(FI\): re-priced in 4 zone-quarter-hours, typically 8\.7 h after first publication/);
     assert.deepEqual(errors, []);
