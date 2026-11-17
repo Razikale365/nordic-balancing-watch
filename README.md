@@ -96,13 +96,14 @@ python scripts/check_data.py tests/fixtures/data
 data is more than 45 minutes old, when more than a tenth of the collector's checks in the last
 24 hours failed, or when the newest price of a source and zone is more than two hours later
 than that series' 95th percentile. The `Data freshness` workflow is scheduled to run it twice an
-hour, so a stalled collector shows up as a failed run. GitHub delays scheduled runs at busy
-times, though: on 2026-11-17 runs came about eight hours apart, and a stall was flagged six
-hours late. So a small Cloudflare Worker (`watchdog/`) runs every 15 minutes and starts the
-workflow itself: every hour, so all the checks run on time; at once when the data is more than
-45 minutes old or cannot be read and the last run had passed; and on Mondays at 12:00 UTC as a
-test that fails on purpose ("Weekly alert test"), so a missing weekly email means the alert
-itself is broken. Failed runs send GitHub's usual email.
+hour, so a stalled collector shows up as a failed run. GitHub can delay scheduled runs, though:
+on 2026-11-17 runs came about eight hours apart, and a stall was flagged six hours late. So a
+small Cloudflare Worker (`watchdog/`) runs every 15 minutes and starts the workflow itself:
+about every hour, so all the checks run; at once when the data is more than 45 minutes old or
+cannot be read and the last check had passed; and on Mondays at 12:00 UTC as a test that fails
+on purpose ("Weekly alert test"). GitHub notifies the token's owner of failed runs, by email
+when their Actions notification settings allow it, so a missing weekly email means the alert
+chain itself is broken.
 
 The browser tests check that the heading, explanations, method and glossary stay readable
 with JavaScript off, when `app.js` fails to load and when the data files cannot be fetched,
