@@ -1,0 +1,17 @@
+# A separate Worker from the Pages site: it only runs on its schedule and has no public URL.
+# Deploy with `npx wrangler deploy --config watchdog/wrangler.toml`, then set the token once with
+# `npx wrangler secret put GITHUB_TOKEN --config watchdog/wrangler.toml`.
+name = "nbw-stale-data-alert"
+main = "watchdog.mjs"
+compatibility_date = "2026-10-01"
+workers_dev = false
+preview_urls = false
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[vars]
+DATA_URL = "https://nordic-balancing-watch.pages.dev/data/summary.json"
+GITHUB_REPO = "Razikale365/nordic-balancing-watch"
+WORKFLOW = "freshness.yml"
+GITHUB_REF = "main"
