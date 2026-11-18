@@ -31,6 +31,42 @@
           and left out of the figures.</p>
       </div>
 
+      <article class="card" aria-labelledby="j10-h">
+        <h3 id="j10-h">17 November 2026: what a nine-hour gap in collection keeps and loses</h3>
+
+        <h4>What was found</h4>
+        <p>The collector runs on a small cloud machine. Overnight it installed a Debian kernel
+          update (6.1.0-55) with a known ext4 filesystem fault, and at about 02:45 UTC the
+          machine froze. The last checks before the freeze ran at 02:40 UTC (Energinet&rsquo;s
+          5-minute imbalance prices), 02:30 UTC (the 15-minute checks of eSett, Fingrid and
+          ENTSO-E) and about 02:00 UTC (capacity prices). Checks resumed between 11:55 and
+          12:00 UTC on the previous kernel.</p>
+        <p>The gap shows what the sources keep and what they do not:</p>
+        <ul>
+          <li>Every price first published during the gap was still there afterwards. The
+            15-minute checks look back 48 hours, and capacity checks look 48 hours back and
+            ahead, so the first checks after the restart read them all. For capacity, they
+            found the same number of prices, product by product, as the same hours on
+            16 November.</li>
+          <li>Earlier versions of a price are not kept. A source shows only its current value,
+            so a price changed more than once during the gap shows only its last value. From
+            02:00 to 13:00 UTC on 16 November, eSett revised 553 imbalance prices and Energinet
+            88. On 17 November the checks from the restart to 13:00 UTC found 107 and 10.</li>
+          <li>Publication times are not kept either. A price first seen after the restart was
+            published at some point during the gap.</li>
+        </ul>
+
+        <h4>How the page handles it</h4>
+        <p>A price is timed only when the check just before it found the price still missing.
+          The prices first seen after the restart are therefore left out of the timings, not
+          counted as slow. Revision counts for 17 November leave out the changes that were
+          replaced while collection was stopped.</p>
+        <p>Since 17 November the machine restarts itself after a kernel crash, and kernel
+          updates are no longer installed automatically. A separate check, run outside the
+          machine, starts the data freshness test when the page&rsquo;s data is more than
+          45 minutes old, so a stop is reported within about an hour.</p>
+      </article>
+
       <article class="card" aria-labelledby="j4-h">
         <h3 id="j4-h">11 November 2026: a value filled in late looks like a corrected one</h3>
 
