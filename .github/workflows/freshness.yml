@@ -1,11 +1,19 @@
 name: Data freshness
+run-name: ${{ inputs.test_alert && 'Weekly alert test (fails on purpose)' || 'Data freshness' }}
 
 # GitHub disables scheduled workflows in a public repository after 60 days without repository
 # activity; a push, or enabling the workflow again on the Actions tab, starts it again.
+# The stale-data Worker (watchdog/) also starts this workflow every hour, since GitHub delays
+# scheduled runs at busy times.
 on:
   schedule:
     - cron: "7,37 * * * *"
   workflow_dispatch:
+    inputs:
+      test_alert:
+        description: Fail on purpose, to show that a failed check still reaches the inbox
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -14,6 +22,12 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
+      - name: Weekly alert test
+        if: ${{ inputs.test_alert }}
+        run: |
+          echo "::error::Weekly test from the stale-data Worker. This run fails on purpose to show that a failed check still sends its email. Nothing needs doing."
+          exit 1
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

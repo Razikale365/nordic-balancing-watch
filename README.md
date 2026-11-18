@@ -95,8 +95,15 @@ python scripts/check_data.py tests/fixtures/data
 `scripts/check_live.py` does the same checks on the live site's data and also fails when the
 data is more than 45 minutes old, when more than a tenth of the collector's checks in the last
 24 hours failed, or when the newest price of a source and zone is more than two hours later
-than that series' 95th percentile. The `Data freshness` workflow runs it twice an hour, so a
-stalled collector shows up as a failed run.
+than that series' 95th percentile. The `Data freshness` workflow is scheduled to run it twice an
+hour, so a stalled collector shows up as a failed run. GitHub can delay scheduled runs, though:
+on 2026-11-17 runs came about eight hours apart, and a stall was flagged six hours late. So a
+small Cloudflare Worker (`watchdog/`) runs every 15 minutes and starts the workflow itself:
+about every hour, so all the checks run; at once when the data is more than 45 minutes old or
+cannot be read and the last check had passed; and on Mondays at 12:00 UTC as a test that fails
+on purpose ("Weekly alert test"). GitHub notifies the token's owner of failed runs, by email
+when their Actions notification settings allow it, so a missing weekly email means the alert
+chain itself is broken.
 
 The browser tests check that the heading, explanations, method and glossary stay readable
 with JavaScript off, when `app.js` fails to load and when the data files cannot be fetched,
@@ -154,3 +161,8 @@ final domain.
    `data` branch every 15 minutes.
 5. Add a Cloudflare rate-limiting rule for `/api/waitlist` (for example 5 requests per minute
    per IP); the function itself does not rate-limit.
+6. Deploy the stale-data alert with `npx wrangler deploy --config watchdog/wrangler.toml`.
+   Create a fine-grained GitHub token for this repository only, with the "Actions: read and
+   write" permission, and store it with
+   `npx wrangler secret put GITHUB_TOKEN --config watchdog/wrangler.toml`. Without the token
+   the Worker only logs that the data is stale.
