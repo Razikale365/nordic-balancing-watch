@@ -78,24 +78,38 @@
   function rePriced(g) { return (g.last7.revisions || 0) + (g.last7.completions || 0); }
   /* A completion is one event in a joint market, so it is never summed across zones:
      the zone's products are summed first, then said per zone — equal zones, a min–max
-     range, or a single zone's count. */
+     range, or a single zone's count. The count is of prices, one per product, direction
+     and hour, so several products together can exceed the hours in the window; the
+     products are then listed with their own counts. */
   function perZoneCompletions(gs) {
-    var byZone = {};
-    gs.forEach(function (g) { byZone[g.zone] = (byZone[g.zone] || 0) + (g.last7.completions || 0); });
-    var done = Object.keys(byZone).map(function (z) { return ru().of(byZone[z]); });
-    if (!sum(done)) return null;
-    var lo = Math.min.apply(null, done), hi = Math.max.apply(null, done), u = ru().many;
-    return done.length === 1 ? "in <b>" + fmtInt(lo) + " " + u + "</b>"
-      : lo === hi ? "in <b>" + fmtInt(lo) + " " + u + " in each zone</b>"
-      : "in <b>" + fmtInt(lo) + "–" + fmtInt(hi) + " " + u + " per zone</b>";
+    var span = function (byZone) {
+      var v = Object.keys(byZone).map(function (z) { return ru().of(byZone[z]); });
+      var lo = Math.min.apply(null, v), hi = Math.max.apply(null, v);
+      return { n: v.length, total: sum(v), lo: lo, hi: hi, text: lo === hi ? fmtInt(lo) : fmtInt(lo) + "–" + fmtInt(hi) };
+    };
+    var byZone = {}, byData = {};
+    gs.forEach(function (g) {
+      byZone[g.zone] = (byZone[g.zone] || 0) + (g.last7.completions || 0);
+      var d = (byData[g.data] = byData[g.data] || {});
+      d[g.zone] = (d[g.zone] || 0) + (g.last7.completions || 0);
+    });
+    var all = span(byZone);
+    if (!all.total) return null;
+    var u = ru().prices;
+    var head = all.n === 1 ? "<b>" + all.text + " " + u + "</b>"
+      : all.lo === all.hi ? "<b>" + all.text + " " + u + " in each zone</b>"
+      : "<b>" + all.text + " " + u + " per zone</b>";
+    var parts = Object.keys(byData).sort().map(function (d) { var s = span(byData[d]); return s.total ? d + " " + s.text : ""; })
+      .filter(function (x) { return x; });
+    return head + (parts.length > 1 ? " (" + esc(parts.join(", ")) + ")" : "");
   }
   /* Every reserve capacity source publishes one price per hour; the library spreads each
      hourly price over four quarter-hour records that are first seen, completed and revised
      together. Reserve counts are therefore shown per hour, the unit the source published.
      If any count is not a multiple of four, a source has changed its resolution, and the
      page falls back to quarter-hours rather than guess. */
-  var RU_HOUR = { div: 4, one: "hour", many: "hours", zone: "zone-hours", delivery: "delivery hours", deliveryOne: "delivery hour" };
-  var RU_QUARTER = { div: 1, one: "quarter-hour", many: "quarter-hours", zone: "zone-quarter-hours", delivery: "delivery quarter-hours", deliveryOne: "delivery quarter-hour" };
+  var RU_HOUR = { div: 4, one: "hour", many: "hours", prices: "hourly prices", zone: "zone-hours", delivery: "delivery hours", deliveryOne: "delivery hour" };
+  var RU_QUARTER = { div: 1, one: "quarter-hour", many: "quarter-hours", prices: "quarter-hour prices", zone: "zone-quarter-hours", delivery: "delivery quarter-hours", deliveryOne: "delivery quarter-hour" };
   function reserveUnit(s) {
     var counts = [];
     reserveGroups(s || {}).forEach(function (g) {
@@ -820,6 +834,23 @@
     return out;
   }
 
+  /* The sources clearly first in the zones the leading category does not win, by source:
+     [{ label, zones, lo, hi }] with the median minutes rounded, so the copy names every
+     source that is first somewhere, not only the one first most often. */
+  function otherFirsts(fastest, clear, lead) {
+    var by = {};
+    Object.keys(fastest).forEach(function (z) {
+      var g = fastest[z];
+      if (!clear[z] || cat(g.source) === lead) return;
+      (by[g.source] = by[g.source] || []).push(g);
+    });
+    return Object.keys(by).sort(function (a, b) { return by[b].length - by[a].length || (SRC_LABEL[a] < SRC_LABEL[b] ? -1 : 1); }).map(function (k) {
+      var p = by[k].map(function (g) { return g.last7.p50; });
+      return { label: SRC_LABEL[k] || k, zones: by[k].map(function (g) { return g.zone; }),
+        lo: Math.round(Math.min.apply(null, p)), hi: Math.round(Math.max.apply(null, p)) };
+    });
+  }
+
   /* "7–10 h", from slowest-interval delays in minutes. */
   function hoursSpan(lo, hi) {
     var a = Math.round(lo / 60), b = Math.round(hi / 60);
@@ -998,17 +1029,21 @@
       : "The log keeps " + (kp.imbalance === kp.imbalance_total
           ? "every imbalance price change in the " + state.cov.label + " (" + fmtInt(kp.imbalance) + ")"
           : "the newest " + fmtInt(kp.imbalance) + " of " + fmtInt(kp.imbalance_total) + " imbalance price changes") +
-        " and the newest " + fmtInt(kp.other) + " of " + fmtInt(kp.other_total) + " reserve price changes" +
+        " and the newest " + fmtInt(kp.other) + " of " + fmtInt(kp.other_total) + " reserve price changes (one row per zone; neighbouring hours with the same change share a row)" +
         (validTime(kp.other_since) ? ", back to " + dateTime(kp.other_since) + " " + tzName(kp.other_since) : "") +
         ". The revision log, its CSV and the charts built from it cover only those entries.";
     document.querySelectorAll("[data-revcap]").forEach(function (el) {
       el.textContent = keptText != null ? keptText : capped ? "The log keeps only the newest " + fmtInt(logged) + " entries, back to " + dateTime(oldest) + " " + tzName(oldest) +
         ", while " + fmtInt(counted) + " changes were counted in the window. The revision log, its CSV and the charts built from it cover only those entries." : "";
     });
-    var currency = sum((s.groups || []).map(function (g) { return (g.last7 && g.last7.currency_recalculations) || 0; }));
+    /* Counted per 15-minute price whose krone value moved, not per recalculation run. */
+    var curGroups = (s.groups || []).filter(function (g) { return g.last7 && g.last7.currency_recalculations > 0; })
+      .sort(function (a, b) { return zoneIndex(a.zone) - zoneIndex(b.zone); });
+    var currency = sum(curGroups.map(function (g) { return g.last7.currency_recalculations; }));
+    var curZones = curGroups.length > 1 ? " (" + curGroups.map(function (g) { return fmtInt(g.last7.currency_recalculations) + " in " + g.zone; }).join(", ") + ")" : "";
     document.querySelectorAll("[data-currency]").forEach(function (el) {
-      el.textContent = currency ? "Energi Data Service also recalculated its Danish-krone price " + fmtInt(currency) +
-        (currency === 1 ? " time" : " times") + " in the window with the euro price unchanged. Those currency recalculations are not revisions and are not in the log." : "";
+      el.textContent = currency ? "Energi Data Service also recalculated the Danish-krone value of " + fmtInt(currency) +
+        (currency === 1 ? " 15-minute price" : " 15-minute prices") + curZones + " in the window, the euro price unchanged. Those currency recalculations are not revisions and are not in the log." : "";
     });
     /* Replaces the page's own sentence, which stays only for readers without the data. */
     $("coverage-note").textContent = !c.since ? "The statistics use a rolling 7-day window and the daily view covers up to 30 closed UTC days. The data does not say when collection started, so how much of the window is filled is unknown."
@@ -1052,6 +1087,7 @@
       }).join("") + (level ? '<i style="flex:' + level + ';background:var(--muted)" title="Level in ' + level + '"></i>' : "") + "</span>";
       tiles.push(["First price seen after", fmtMin(median(zones.map(function (z) { return fastest[z].last7.p50; }))),
         "Median zone · " + (lead ? CAT_LABEL[lead] + " first in " + wins[lead] + " of " + zones.length : "no source clearly first") +
+        (lead ? otherFirsts(fastest, clear, lead).map(function (o) { return " · " + o.label + " in " + o.zones.length; }).join("") : "") +
         (lead && level ? " · level in " + level : ""), bar]);
     }
     var es = (byCat.esett || []).map(function (g) { return g.last7.p50; }).filter(function (v) { return v != null; });
@@ -1065,7 +1101,7 @@
     if (mature) {
       /* The share that means something: prices watched long enough to have been revised. */
       tiles.push(["First prices changed later", fmtPct(mature.revised / mature.published, 1),
-        fmtInt(mature.revised) + " of " + fmtInt(mature.published) + " imbalance prices first seen " + mature.days + ", watched " + MATURE_DAYS + " days or more",
+        fmtInt(mature.revised) + " of " + fmtInt(mature.published) + " imbalance prices first seen " + mature.days + ", each source counted, watched " + MATURE_DAYS + " days or more",
         '<span class="tile-meter" aria-hidden="true"><i style="width:' + Math.max(mature.revised ? 2 : 0, Math.round(mature.revised / mature.published * 100)) + '%"></i></span>']);
     } else if (pub) {
       /* A price first seen in the window has had less than the window to change. When the
@@ -1106,7 +1142,7 @@
     var done = typeof c7.market_intervals === "number" && isFinite(c7.market_intervals) ? c7.market_intervals : null;
     /* One completion per joint-market price, in the unit the source published (see ru). */
     if (done != null) done = ru().of(done);
-    var auction = done == null ? "" : " · plus " + fmtInt(done) + (ru().div === 4 ? " hourly reserve price" + (done === 1 ? "" : "s")
+    var auction = done == null ? "" : " · not counted here: " + fmtInt(done) + (ru().div === 4 ? " hourly reserve price" + (done === 1 ? "" : "s")
       : " reserve quarter-hour" + (done === 1 ? "" : "s")) + " completed by a later auction";
     /* The check counts come from the same file, so a stalled collector cannot vouch for itself. */
     var stale = state.summary && isStale(state.summary);
@@ -1138,6 +1174,9 @@
       out.push("The " + term("imbalance", "imbalance price") + " usually shows up first on <b>" + esc(CAT_LABEL[lead]) +
         "</b>: in <b>" + wins[lead] + " of " + zones.length + "</b> " + term("zone", "price zones") + ", about <b>" +
         (lo === hi ? lo : lo + "–" + hi) + " minutes</b> after each 15 minutes end." +
+        otherFirsts(fastest, clear, lead).map(function (o) {
+          return " In " + esc(zoneRange(o.zones)) + " <b>" + esc(o.label) + "</b> is first, about " + (o.lo === o.hi ? o.lo : o.lo + "–" + o.hi) + " minutes after.";
+        }).join("") +
         (level.length ? " In " + esc(zoneRange(level)) + " the first two sources are level, within " + LEVEL_MIN + " minutes of each other." : ""));
     }
     var gaps = imb.filter(function (g) { return g.source === "esett" && fastest[g.zone] && fastest[g.zone].source !== "esett"; })
@@ -1164,10 +1203,10 @@
     var mature = matureCohort(s);
     if (mature) {
       out.push(mature.revised
-        ? "Of the " + fmtInt(mature.published) + " first prices seen " + esc(mature.days) + ", each watched for " + MATURE_DAYS +
-          " days or more, <b>" + fmtPct(mature.revised / mature.published, 1) + "</b> (" + fmtInt(mature.revised) + ") were changed later."
-        : "None of the " + fmtInt(mature.published) + " first prices seen " + esc(mature.days) + ", each watched for " + MATURE_DAYS +
-          " days or more, has been changed since.");
+        ? "Of the " + fmtInt(mature.published) + " first prices seen " + esc(mature.days) + ", before this window (each source counted, each price watched for " + MATURE_DAYS +
+          " days or more), <b>" + fmtPct(mature.revised / mature.published, 1) + "</b> (" + fmtInt(mature.revised) + ") were changed later."
+        : "None of the " + fmtInt(mature.published) + " first prices seen " + esc(mature.days) + ", before this window (each source counted, each price watched for " + MATURE_DAYS +
+          " days or more), has been changed since.");
     } else if (top) {
       var clean = CAT_ORDER.filter(function (c) {
         var gs = imb.filter(function (g) { return cat(g.source) === c; });
@@ -1200,13 +1239,13 @@
       var leadMin = median(gs.map(function (g) { return g.last7.p50; }).filter(function (v) { return v != null && v < 0; }));
       var per = perZoneCompletions(gs), rev = ru().of(zoneSum(gs));
       var lag = per ? lagOf(gs, "completion_lag_p50_h") : lagOf(gs, "lag_p50_h");
-      var note = per ? "completed by a later auction " + per + (rev ? "; " + fmtInt(rev) + " " + ru().zone + " revised" : "")
+      var note = per ? "a later auction completed " + per + (rev ? "; " + fmtInt(rev) + " " + ru().zone + " revised" : "")
         : fmtInt(n) + " " + ru().zone + " re-priced";
       out.push("Prices for " + term("reserve", "standby power") + " (" + esc(products.join(" and ")) + " in " +
         esc(zoneRange(gs.map(function (g) { return g.zone; }))) + ") come out" +
         (leadMin != null ? " about <b>" + fmtHours(-leadMin / 60) + " before delivery</b>" : " ahead of delivery") +
         " and are then updated" + (lag != null ? " about <b>" + fmtHours(lag) + "</b> later," : "") +
-        " when the next " + term("auction", "auction") + " clears (" + note + ").");
+        " when the next " + term("auction", "auction") + " clears: " + note + ".");
     }
     $("findings").innerHTML = out.length ? out.map(function (h) { return "<li><span>" + h + "</span></li>"; }).join("")
       : "<li><span>Not enough data yet: findings appear after the first full day of collection.</span></li>";
@@ -1626,7 +1665,7 @@
       }
       if (per) {
         var clag = lagOf(gs, "completion_lag_p50_h");
-        return head + "completed by a later auction " + per +
+        return head + "a later auction completed " + per +
           (clag != null ? ", typically " + fmtHours(clag) + " after first publication" : "") +
           (rev ? "; " + fmtInt(rev) + " " + ru().zone + " revised" : "") + ".";
       }
