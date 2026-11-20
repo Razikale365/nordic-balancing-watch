@@ -2294,21 +2294,23 @@
     });
   }
 
-  /* Hours after an interval ends before a missing value reads as not published rather than pending. */
-  var ZD_SETTLED_MS = 3 * 3600000;
+  /* Hours after an interval ends before an interval with no price at all gets a dated note. Sources can
+     still publish later (eSett has taken most of a day), so the note states what was missing by when. */
+  var ZD_NO_PRICE_MS = 3 * 3600000;
 
   function zdTip(d, srcs, i, revs, iso, hm) {
     var dir = d.direction[i];
-    var settled = Date.parse(d.generated_at) - (Date.parse(iso(i)) + ZD_STEP) > ZD_SETTLED_MS;
-    var none = srcs.every(function (s) { return d.series[s][i] == null; });
-    var dirText = dir == null ? (settled ? "not published" : "not yet published") : dir > 0 ? "up" : dir < 0 ? "down" : "none";
+    var built = validTime(d.generated_at);
+    var noPrice = built && Date.parse(built) - (Date.parse(iso(i)) + ZD_STEP) > ZD_NO_PRICE_MS &&
+      srcs.every(function (s) { return d.series[s][i] == null; });
+    var dirText = dir == null ? "not yet published" : dir > 0 ? "up" : dir < 0 ? "down" : "none";
     return '<div class="t-title">' + esc(fmtTime(iso(i), { day: "numeric", month: "short" }) + ", " + hm(i) + "–" + hm(i + 1) + " " + tzName(iso(i))) + "</div>" +
       srcs.map(function (s) {
         var r = revs.filter(function (q) { return q[0] === i && q[1] === s; })[0];
         return tipRow(cat(s), SRC_LABEL[s] || s, fmtPrice(d.series[s][i])) +
           (r ? '<div class="t-sub zd-was">First ' + fmtPrice(r[2]) + ", seen " + esc(dateTime(r[3])) + "</div>" : "");
       }).join("") +
-      (none && settled ? '<div class="t-sub">No source published a price for this interval.</div>' : "") +
+      (noPrice ? '<div class="t-sub">No source had published a price by ' + esc(dateTime(built) + " " + tzName(built)) + ".</div>" : "") +
       '<div class="t-sub">Direction: ' + dirText +
       (d.mfrr_up[i] != null || d.mfrr_down[i] != null ? "<br>mFRR up " + fmtPrice(d.mfrr_up[i]) + " · down " + fmtPrice(d.mfrr_down[i]) : "") + "</div>";
   }
