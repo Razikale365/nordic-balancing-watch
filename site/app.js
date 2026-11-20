@@ -2294,15 +2294,25 @@
     });
   }
 
+  /* How long (3 h, in ms) after an interval ends before one with no price from any source gets a dated
+     note. Sources can still publish later (eSett has taken most of a day), so the note states only what
+     had been collected by when. */
+  var ZD_NO_PRICE_MS = 3 * 3600000;
+
   function zdTip(d, srcs, i, revs, iso, hm) {
     var dir = d.direction[i];
+    var built = validTime(d.generated_at);
+    var noPrice = built && Date.parse(built) - (Date.parse(iso(i)) + ZD_STEP) > ZD_NO_PRICE_MS &&
+      srcs.every(function (s) { return d.series[s][i] == null; });
+    var dirText = dir == null ? "not yet published" : dir > 0 ? "up" : dir < 0 ? "down" : "none";
     return '<div class="t-title">' + esc(fmtTime(iso(i), { day: "numeric", month: "short" }) + ", " + hm(i) + "–" + hm(i + 1) + " " + tzName(iso(i))) + "</div>" +
       srcs.map(function (s) {
         var r = revs.filter(function (q) { return q[0] === i && q[1] === s; })[0];
         return tipRow(cat(s), SRC_LABEL[s] || s, fmtPrice(d.series[s][i])) +
           (r ? '<div class="t-sub zd-was">First ' + fmtPrice(r[2]) + ", seen " + esc(dateTime(r[3])) + "</div>" : "");
       }).join("") +
-      '<div class="t-sub">Direction: ' + (dir == null ? "not yet published" : dir > 0 ? "up" : dir < 0 ? "down" : "none") +
+      (noPrice ? '<div class="t-sub">No price had been collected by ' + esc(dateTime(built) + " " + tzName(built)) + ".</div>" : "") +
+      '<div class="t-sub">Direction: ' + dirText +
       (d.mfrr_up[i] != null || d.mfrr_down[i] != null ? "<br>mFRR up " + fmtPrice(d.mfrr_up[i]) + " · down " + fmtPrice(d.mfrr_down[i]) : "") + "</div>";
   }
 
