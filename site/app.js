@@ -2294,8 +2294,9 @@
     });
   }
 
-  /* Hours after an interval ends before an interval with no price at all gets a dated note. Sources can
-     still publish later (eSett has taken most of a day), so the note states what was missing by when. */
+  /* How long (3 h, in ms) after an interval ends before one with no price from any source gets a dated
+     note. Sources can still publish later (eSett has taken most of a day), so the note states only what
+     had been collected by when. */
   var ZD_NO_PRICE_MS = 3 * 3600000;
 
   function zdTip(d, srcs, i, revs, iso, hm) {
@@ -2310,7 +2311,7 @@
         return tipRow(cat(s), SRC_LABEL[s] || s, fmtPrice(d.series[s][i])) +
           (r ? '<div class="t-sub zd-was">First ' + fmtPrice(r[2]) + ", seen " + esc(dateTime(r[3])) + "</div>" : "");
       }).join("") +
-      (noPrice ? '<div class="t-sub">No source had published a price by ' + esc(dateTime(built) + " " + tzName(built)) + ".</div>" : "") +
+      (noPrice ? '<div class="t-sub">No price had been collected by ' + esc(dateTime(built) + " " + tzName(built)) + ".</div>" : "") +
       '<div class="t-sub">Direction: ' + dirText +
       (d.mfrr_up[i] != null || d.mfrr_down[i] != null ? "<br>mFRR up " + fmtPrice(d.mfrr_up[i]) + " · down " + fmtPrice(d.mfrr_down[i]) : "") + "</div>";
   }
