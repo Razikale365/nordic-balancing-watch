@@ -6,7 +6,9 @@
 // The Worker starts the workflow
 // - about every hour, so all of scripts/check_live.py's checks run, not only the data's age;
 // - at once when the data is too old or cannot be read, unless the last monitoring run already
-//   failed (and so already notified); while the problem lasts, the hourly runs keep failing;
+//   failed (and so already notified; that failure may have been a provider gap, so a stall that
+//   starts just after it waits for the next hourly run); while the problem lasts, the hourly runs
+//   keep failing;
 // - on Mondays at 12:00 UTC with test_alert set, so that run fails on purpose and its
 //   notification shows that the whole chain still works.
 // Only runs on the monitored branch count, and the weekly test run is never one of them.
@@ -53,6 +55,8 @@ export function decide({ problem, lastRun, now, weeklyTest }) {
   if (lastAge >= (FULL_CHECK_EVERY_MINUTES - SLACK_MINUTES) * 60000) return problem ? "stale" : "hourly";
   // A run that is still going, or that failed, has the problem in hand: it fails, or already
   // failed and sent its email. Only a run that passed has not told anyone yet.
+  // A failed run may have failed on a provider gap rather than the collector; the next hourly
+  // run then checks the collector again.
   if (problem && lastRun.status === "completed" && lastRun.conclusion === "success") return "stale";
   return null;
 }

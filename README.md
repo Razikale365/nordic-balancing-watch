@@ -92,18 +92,23 @@ node --test tests/browser/*.test.mjs       # the page in Chromium (needs Playwri
 python scripts/check_data.py tests/fixtures/data
 ```
 
-`scripts/check_live.py` does the same checks on the live site's data and also fails when the
-data is more than 45 minutes old, when more than a tenth of the collector's checks in the last
-24 hours failed, or when the newest price of a source and zone is more than two hours later
-than that series' 95th percentile. The `Data freshness` workflow is scheduled to run it twice an
-hour, so a stalled collector shows up as a failed run. GitHub can delay scheduled runs, though:
-on 2026-11-17 runs came about eight hours apart, and a stall was flagged six hours late. So a
-small Cloudflare Worker (`watchdog/`) runs every 15 minutes and starts the workflow itself:
-about every hour, so all the checks run; at once when the data is more than 45 minutes old or
-cannot be read and the last check had passed; and on Mondays at 12:00 UTC as a test that fails
-on purpose ("Weekly alert test"). GitHub notifies the token's owner of failed runs, by email
-when their Actions notification settings allow it, so a missing weekly email means the alert
-chain itself is broken.
+`scripts/check_live.py` does the same checks on the live site's data, in two jobs. "Collector
+and site" fails when a data file is more than 45 minutes old, when more than a tenth of the
+collector's checks in the last 24 hours failed, or when no provider has a current price
+anywhere. "Price sources" fails when a zone has no current price from any provider. A gap at one
+provider in zones that other providers still cover is a warning on the run page; it fails the
+check when it is 6 hours old and then each morning from 06:00 to 07:30 UTC while it lasts. The
+check cannot tell a provider's gap from a bug in our collector that affects one zone of one
+provider; the warning names the provider's page to check. The `Data freshness` workflow is
+scheduled to run it twice an hour, so a stalled collector shows up as a failed run. GitHub can
+delay scheduled runs, though: on 2026-11-17 runs came about eight hours apart, and a stall was
+flagged six hours late. So a small Cloudflare Worker (`watchdog/`) runs every 15 minutes and
+starts the workflow itself: about every hour, so all the checks run; at once when the data is
+more than 45 minutes old or cannot be read and the last check had passed; and on Mondays at
+12:00 UTC as a test that fails on purpose ("Weekly alert test"). GitHub notifies the token's
+owner of failed runs, by email when their Actions notification settings allow it, so a missing
+weekly email means the alert chain itself is broken. A run that failed on a provider gap also
+counts as notified, so a stall that starts just after it is caught by the next hourly run.
 
 The browser tests check that the heading, explanations, method and glossary stay readable
 with JavaScript off, when `app.js` fails to load and when the data files cannot be fetched,
